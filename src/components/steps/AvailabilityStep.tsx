@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Calendar, Clock, Users, ChevronLeft, ChevronRight, Info, Filter } from 'lucide-react';
-import { format, addDays, startOfWeek, addWeeks, subWeeks, isSameDay, parseISO, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, eachMinuteOfInterval, isWithinInterval } from 'date-fns';
+import { Calendar, Clock, Users, ChevronLeft, ChevronRight, Info, X } from 'lucide-react';
+import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
 import { useTeamData } from '../../hooks/useTeamData';
 import { supabase } from '../../integrations/supabase/client';
 import { StepProps, TimeSlot } from '../../types/scheduling';
 import { TimezoneSelector } from '../TimezoneSelector';
 import { useBusinessHours } from '../../hooks/useBusinessHours';
 
+// --- TYPES ---
 interface AvailabilityStepProps extends StepProps {
   clientTeamFilter?: string;
 }
@@ -22,6 +23,25 @@ interface SchedulingWindowSettings {
   availability_type: string;
 }
 
+interface MemberColor {
+  border: string;
+  bg: string;
+  text: string;
+  hex: string;
+}
+
+// --- COLOR PALETTE FOR MEMBERS ---
+const MEMBER_COLORS: MemberColor[] = [
+  { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-400', hex: '#34d399' },
+  { border: 'border-blue-500/40', bg: 'bg-blue-500/20', text: 'text-blue-400', hex: '#60a5fa' },
+  { border: 'border-purple-500/40', bg: 'bg-purple-500/20', text: 'text-purple-400', hex: '#c084fc' },
+  { border: 'border-amber-500/40', bg: 'bg-amber-500/20', text: 'text-amber-400', hex: '#fbbf24' },
+  { border: 'border-rose-500/40', bg: 'bg-rose-500/20', text: 'text-rose-400', hex: '#fb7185' },
+  { border: 'border-cyan-500/40', bg: 'bg-cyan-500/20', text: 'text-cyan-400', hex: '#22d3ee' },
+  { border: 'border-lime-500/40', bg: 'bg-lime-500/20', text: 'text-lime-400', hex: '#a3e635' },
+  { border: 'border-orange-500/40', bg: 'bg-orange-500/20', text: 'text-orange-400', hex: '#fb923c' },
+];
+
 const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, onBack, onStateChange, clientTeamFilter }) => {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
@@ -29,18 +49,18 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   const [monthlyBusySchedule, setMonthlyBusySchedule] = useState<Record<string, BusySlot[]>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showOnlyAllAvailable, setShowOnlyAllAvailable] = useState(false);
   const [schedulingSettings, setSchedulingSettings] = useState<SchedulingWindowSettings | null>(null);
+  const [draggedMember, setDraggedMember] = useState<{ id: string, from: 'required' | 'optional' } | null>(null);
   
   const { teamMembers } = useTeamData();
   const { businessHours, getWorkingHoursForDate, isWorkingDay } = useBusinessHours(clientTeamFilter);
 
-  // Filter team members who have calendar connections
+  // 1. Filter connected members
   const connectedMembers = teamMembers.filter(member => 
     member.googleCalendarConnected || member.email
   );
 
-  // Get selected team members with calendar access - memoize to prevent infinite loops
+  // 2. Resolve selected members from IDs
   const selectedMembers = useMemo(() => {
     const requiredMembers = Array.from(appState.requiredMembers)
       .map(memberId => connectedMembers.find(m => m.id === memberId))
@@ -50,7 +70,19 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       .map(memberId => connectedMembers.find(m => m.id === memberId))
       .filter(Boolean);
     
-    return { required: requiredMembers, optional: optionalMembers, all: [...requiredMembers, ...optionalMembers] };
+    // Assign consistent colors based on ID hash or index in total list
+    const assignColor = (memberId: string): MemberColor => {
+       const index = connectedMembers.findIndex(m => m.id === memberId);
+       return MEMBER_COLORS[Math.max(0, index) % MEMBER_COLORS.length];
+    };
+
+    const enhanceMember = (m: any) => ({ ...m, color: assignColor(m.id) });
+
+    return { 
+      required: requiredMembers.map(enhanceMember), 
+      optional: optionalMembers.map(enhanceMember), 
+      all: [...requiredMembers, ...optionalMembers].map(enhanceMember) 
+    };
   }, [appState.requiredMembers, appState.optionalMembers, connectedMembers]);
 
   const selectedMemberEmails = useMemo(() => {
@@ -60,24 +92,23 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     };
   }, [selectedMembers]);
 
-  // Generate calendar days for full month view - start from Monday
+  // 3. Calendar Data
   const calendarDays = useMemo(() => {
-    const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 }); // Monday = 1
+    const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
     const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
     return eachDayOfInterval({ start, end });
   }, [currentMonth]);
 
-  // Load scheduling window settings
+  // --- SETTINGS & DATA LOADING ---
+  
   useEffect(() => {
     const loadSchedulingSettings = async () => {
       try {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('scheduling_window_settings')
           .select('min_notice_hours, max_advance_days, availability_type')
           .eq('is_active', true)
           .maybeSingle();
-
-        if (error) throw error;
         
         if (data) {
           setSchedulingSettings({
@@ -86,34 +117,19 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             availability_type: data.availability_type || 'available_now'
           });
         } else {
-          // Default settings
-          setSchedulingSettings({
-            min_notice_hours: 4,
-            max_advance_days: 60,
-            availability_type: 'available_now'
-          });
+          setSchedulingSettings({ min_notice_hours: 4, max_advance_days: 60, availability_type: 'available_now' });
         }
       } catch (error) {
         console.error('Error loading scheduling settings:', error);
-        // Use defaults on error
-        setSchedulingSettings({
-          min_notice_hours: 4,
-          max_advance_days: 60,
-          availability_type: 'available_now'
-        });
+        setSchedulingSettings({ min_notice_hours: 4, max_advance_days: 60, availability_type: 'available_now' });
       }
     };
-
     loadSchedulingSettings();
   }, []);
 
-  // Load busy schedule for entire month when currentMonth or selectedMemberEmails change
   useEffect(() => {
     const loadMonthlyAvailability = async () => {
-      console.log('loadMonthlyAvailability triggered, selectedMemberEmails:', selectedMemberEmails);
-      
-      if (selectedMemberEmails.required.length === 0) {
-        console.log('No required member emails, clearing schedule');
+      if (selectedMemberEmails.all.length === 0) {
         setMonthlyBusySchedule({});
         setLoading(false);
         return;
@@ -123,65 +139,39 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       setError(null);
       
       try {
-        // Calculate time range for entire visible calendar grid - start from Monday
         const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
         const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
         
-        const timeMin = start.toISOString();
-        const timeMax = end.toISOString();
-
-        console.log('Loading monthly availability for period:', timeMin, 'to', timeMax);
-        console.log('Required members:', selectedMemberEmails.required);
-        console.log('All members (required + optional):', selectedMemberEmails.all);
-        
-        // Call google-auth edge function to get busy schedule for ALL members (required + optional)
         const { data, error } = await supabase.functions.invoke('google-auth', {
           body: {
             action: 'check_availability',
-            userEmails: selectedMemberEmails.all, // Get availability for all members
-            eventData: { timeMin, timeMax }
+            userEmails: selectedMemberEmails.all,
+            eventData: { timeMin: start.toISOString(), timeMax: end.toISOString() }
           }
         });
 
-        console.log('API response:', data, 'error:', error);
-
         if (error) throw error;
 
-        // Process the data to maintain per-member busy schedules
         const memberBusySchedules: Record<string, BusySlot[]> = {};
-        
         if (data?.availability?.calendars) {
-          console.log('Processing calendar data:', data.availability.calendars);
-          
-          // The API returns calendars keyed by email
           Object.entries(data.availability.calendars).forEach(([email, calendar]: [string, any]) => {
-            if (Array.isArray(calendar.busy)) {
-              memberBusySchedules[email] = calendar.busy;
-              console.log(`Member ${email} has ${calendar.busy.length} busy slots`);
-            } else {
-              memberBusySchedules[email] = [];
-              console.log(`Member ${email} has no busy slots`);
-            }
+            memberBusySchedules[email] = Array.isArray(calendar.busy) ? calendar.busy : [];
           });
         }
-
-        console.log('Member busy schedules:', memberBusySchedules);
-        
-        // Store the per-member busy schedules
         setMonthlyBusySchedule(memberBusySchedules);
       } catch (error) {
-        console.error('Error loading monthly availability:', error);
+        console.error('Error loading availability:', error);
         setError('Failed to load availability');
         setMonthlyBusySchedule({});
       } finally {
         setLoading(false);
       }
     };
-
     loadMonthlyAvailability();
   }, [currentMonth, selectedMemberEmails.all.length > 0 ? selectedMemberEmails.all.join(',') : 'empty']);
 
-  // Calculate available slots for selected date with proper per-member availability checking
+  // --- AVAILABILITY CALCULATION ---
+
   useEffect(() => {
     if (!selectedDate || Object.keys(monthlyBusySchedule).length === 0 || !schedulingSettings) {
       setAvailableSlots([]);
@@ -191,266 +181,143 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const calculateAvailableSlots = () => {
       const duration = appState.duration || 60;
       const slots: TimeSlot[] = [];
-      
-      console.log('=== CORRECTED SLOT GENERATION ===');
-      console.log('Selected date:', selectedDate);
-      console.log('Selected timezone:', appState.timezone);
-      console.log('Required members:', selectedMemberEmails.required);
-      console.log('Optional member emails:', selectedMembers.optional.map(m => m.email));
-      console.log('Member busy schedules:', monthlyBusySchedule);
-      console.log('Business hours:', businessHours);
-      
-      // Get working hours for the selected date
       const workingHours = getWorkingHoursForDate(selectedDate);
-      console.log('Working hours for selected date:', workingHours);
       
       if (!workingHours.start || !workingHours.end) {
-        console.log('Selected date is not a working day');
         setAvailableSlots([]);
         return;
       }
       
-      // Parse working hours
       const [startHour, startMinute] = workingHours.start.split(':').map(Number);
       const [endHour, endMinute] = workingHours.end.split(':').map(Number);
       
-      // Define working hours using business hours configuration
-      const userTimezone = appState.timezone || businessHours?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const now = new Date();
+      const minDateTime = new Date(now.getTime() + schedulingSettings.min_notice_hours * 60 * 60 * 1000);
       
-      // Create working hours for the selected date in the user's timezone
       const workingStart = new Date(selectedDate);
       workingStart.setHours(startHour, startMinute, 0, 0);
       
       const workingEnd = new Date(selectedDate);
       workingEnd.setHours(endHour, endMinute, 0, 0);
       
-      // Apply scheduling window constraints
-      const now = new Date();
-      const minDateTime = new Date(now.getTime() + schedulingSettings.min_notice_hours * 60 * 60 * 1000);
-      
-      // Adjust start time if it's today and we need to respect minimum notice
       let effectiveStart = new Date(workingStart);
       if (selectedDate.toDateString() === now.toDateString() && effectiveStart < minDateTime) {
         effectiveStart = new Date(minDateTime);
       }
       
-      console.log('Working hours start (', userTimezone, '):', workingStart.toLocaleString('en-US', { timeZone: userTimezone }));
-      console.log('Working hours end (', userTimezone, '):', workingEnd.toLocaleString('en-US', { timeZone: userTimezone }));
-      console.log('Effective start after min notice (', userTimezone, '):', effectiveStart.toLocaleString('en-US', { timeZone: userTimezone }));
-      
-      // Generate time slots
       let currentTime = new Date(effectiveStart);
       
       while (currentTime < workingEnd) {
         const slotEnd = new Date(currentTime.getTime() + duration * 60000);
-        
-        console.log('\n--- Checking slot:', 
-          currentTime.toLocaleString('en-US', { timeZone: userTimezone }), 
-          'to', 
-          slotEnd.toLocaleString('en-US', { timeZone: userTimezone }),
-          '(', userTimezone, ')'
-        );
-        
-        // Check availability for each required member individually
         const requiredMembersAvailable: string[] = [];
         let allRequiredAvailable = true;
         
         for (const email of selectedMemberEmails.required) {
           const memberBusySlots = monthlyBusySchedule[email] || [];
-          
           const hasConflict = memberBusySlots.some(busySlot => {
             const busyStart = new Date(busySlot.start);
             const busyEnd = new Date(busySlot.end);
-            const overlaps = currentTime < busyEnd && slotEnd > busyStart;
-            
-            if (overlaps) {
-              console.log(`  ❌ Required member ${email} has conflict: ${busySlot.start} to ${busySlot.end}`);
-            }
-            
-            return overlaps;
+            return currentTime < busyEnd && slotEnd > busyStart;
           });
           
-          if (!hasConflict) {
-            requiredMembersAvailable.push(email);
-            console.log(`  ✅ Required member ${email} is available`);
-          } else {
-            allRequiredAvailable = false;
-            console.log(`  ❌ Required member ${email} is NOT available`);
-          }
+          if (!hasConflict) requiredMembersAvailable.push(email);
+          else allRequiredAvailable = false;
         }
         
-        // Only create slot if ALL required members are available
         if (allRequiredAvailable && slotEnd <= workingEnd) {
-          // Check optional members availability
           const optionalMembersAvailable: string[] = [];
-          
           for (const member of selectedMembers.optional) {
             const memberBusySlots = monthlyBusySchedule[member.email] || [];
-            
             const hasConflict = memberBusySlots.some(busySlot => {
               const busyStart = new Date(busySlot.start);
               const busyEnd = new Date(busySlot.end);
-              const overlaps = currentTime < busyEnd && slotEnd > busyStart;
-              
-              if (overlaps) {
-                console.log(`  ❌ Optional member ${member.email} has conflict: ${busySlot.start} to ${busySlot.end}`);
-              }
-              
-              return overlaps;
+              return currentTime < busyEnd && slotEnd > busyStart;
             });
-            
-            if (!hasConflict) {
-              optionalMembersAvailable.push(member.email);
-              console.log(`  ✅ Optional member ${member.email} is available`);
-            } else {
-              console.log(`  ❌ Optional member ${member.email} is NOT available`);
-            }
+            if (!hasConflict) optionalMembersAvailable.push(member.email);
           }
-          
-          // Create attendee info for display
-          const attendees = [
-            ...selectedMembers.required.map(member => ({
-              name: member.name,
-              email: member.email,
-              type: 'required' as const,
-              available: requiredMembersAvailable.includes(member.email)
-            })),
-            ...selectedMembers.optional.map(member => ({
-              name: member.name,
-              email: member.email,
-              type: 'optional' as const,
-              available: optionalMembersAvailable.includes(member.email)
-            }))
-          ];
           
           slots.push({
             start: currentTime.toISOString(),
             end: slotEnd.toISOString(),
-            attendees
+            attendees: [
+              ...selectedMembers.required.map(m => ({ name: m.name, email: m.email, type: 'required' as const, available: true, color: m.color })),
+              ...selectedMembers.optional.map(m => ({ name: m.name, email: m.email, type: 'optional' as const, available: optionalMembersAvailable.includes(m.email), color: m.color }))
+            ]
           });
-          
-          console.log(`  ✅ SLOT CREATED with ${requiredMembersAvailable.length}/${selectedMemberEmails.required.length} required and ${optionalMembersAvailable.length}/${selectedMembers.optional.length} optional available`);
-        } else {
-          console.log(`  ❌ SLOT REJECTED - Required members availability: ${requiredMembersAvailable.length}/${selectedMemberEmails.required.length}`);
         }
-        
-        // Move to next slot
         currentTime = new Date(currentTime.getTime() + duration * 60000);
       }
-      
-      console.log('\n=== FINAL RESULT ===');
-      console.log('Generated', slots.length, 'available slots');
       setAvailableSlots(slots);
     };
-
     calculateAvailableSlots();
-  }, [selectedDate, monthlyBusySchedule, appState.duration, appState.timezone, selectedMemberEmails.required, selectedMembers.required, selectedMembers.optional, schedulingSettings]);
+  }, [selectedDate, monthlyBusySchedule, appState.duration, appState.timezone, selectedMemberEmails.required, schedulingSettings]);
 
-  const availableDateSet = useMemo(() => {
-    if (selectedMemberEmails.required.length === 0 || !businessHours || !schedulingSettings) return new Set<string>();
+  // --- DRAG AND DROP HANDLERS ---
 
-    const availableDates = new Set<string>();
-    const duration = appState.duration || 60;
-    const now = new Date();
+  const handleDragStart = (e: React.DragEvent, memberId: string, from: 'required' | 'optional') => {
+    setDraggedMember({ id: memberId, from });
+    e.dataTransfer.setData('text/plain', memberId);
+    e.dataTransfer.effectAllowed = 'move';
+  };
 
-    // Calculate min and max allowed dates based on scheduling settings
-    const minDateTime = new Date(now.getTime() + schedulingSettings.min_notice_hours * 60 * 60 * 1000);
-    const maxDateTime = new Date(now.getTime() + schedulingSettings.max_advance_days * 24 * 60 * 60 * 1000);
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault(); // Necessary to allow dropping
+  };
 
-    calendarDays.forEach(date => {
-      // Check scheduling window restrictions
-      if (date < minDateTime || date > maxDateTime) {
-        return; // Skip dates outside scheduling window
-      }
+  const handleDrop = (e: React.DragEvent, to: 'required' | 'optional') => {
+    e.preventDefault();
+    if (!draggedMember) return;
 
-      // Check if this is a working day based on business hours
-      if (!isWorkingDay(date)) {
-        return; // Skip non-working days
-      }
+    if (draggedMember.from !== to) {
+        const newRequired = new Set(appState.requiredMembers);
+        const newOptional = new Set(appState.optionalMembers);
 
-      const workingHours = getWorkingHoursForDate(date);
-      if (!workingHours.start || !workingHours.end) {
-        return; // Skip if no working hours defined
-      }
-
-      const [startHour, startMinute] = workingHours.start.split(':').map(Number);
-      const [endHour, endMinute] = workingHours.end.split(':').map(Number);
-
-      const dateStart = new Date(date);
-      dateStart.setHours(startHour, startMinute, 0, 0);
-      const dateEnd = new Date(date);
-      dateEnd.setHours(endHour, endMinute, 0, 0);
-
-      // For today, ensure the time slots are after the minimum notice period
-      if (date.toDateString() === now.toDateString()) {
-        if (dateStart < minDateTime) {
-          dateStart.setTime(minDateTime.getTime());
+        if (to === 'required') {
+            newOptional.delete(draggedMember.id);
+            newRequired.add(draggedMember.id);
+        } else {
+            newRequired.delete(draggedMember.id);
+            newOptional.add(draggedMember.id);
         }
-      }
 
-      const slotInterval = duration;
+        onStateChange({ requiredMembers: newRequired, optionalMembers: newOptional });
+    }
+    setDraggedMember(null);
+  };
 
-      for (let time = new Date(dateStart); time < dateEnd; time = new Date(time.getTime() + slotInterval * 60000)) {
-        const slotEnd = new Date(time.getTime() + duration * 60000);
-        
-        // Additional check for minimum notice on the same day
-        if (time < minDateTime) {
-          continue;
-        }
-        
-        // Check if ALL required members are available for this slot
-        let allRequiredAvailable = true;
-        
-        for (const email of selectedMemberEmails.required) {
-          const memberBusySlots = monthlyBusySchedule[email] || [];
-          const hasConflict = memberBusySlots.some(busySlot => {
-            const busyStart = new Date(busySlot.start);
-            const busyEnd = new Date(busySlot.end);
-            return time < busyEnd && slotEnd > busyStart;
-          });
-          
-          if (hasConflict) {
-            allRequiredAvailable = false;
-            break;
-          }
-        }
-        
-        if (allRequiredAvailable && slotEnd <= dateEnd) {
-          availableDates.add(format(date, 'yyyy-MM-dd'));
-          break; 
-        }
-      }
-    });
-    return availableDates;
-  }, [monthlyBusySchedule, calendarDays, appState.duration, appState.timezone, selectedMemberEmails.required, businessHours, isWorkingDay, getWorkingHoursForDate, schedulingSettings]);
+  const removeMember = (id: string) => {
+    const newRequired = new Set(appState.requiredMembers);
+    const newOptional = new Set(appState.optionalMembers);
+    newRequired.delete(id);
+    newOptional.delete(id);
+    onStateChange({ requiredMembers: newRequired, optionalMembers: newOptional });
+  };
+
+  // --- HELPER RENDERS ---
 
   const isDateAvailable = (date: Date) => {
-    return availableDateSet.has(format(date, 'yyyy-MM-dd'));
+    // Quick check for the calendar visual
+    if (!businessHours || !isWorkingDay(date)) return false;
+    // Real logic is handled per member in the render loop for dots
+    return true; 
   };
 
   const handleDateSelect = (date: Date) => {
-    console.log('Date selected:', date);
     setSelectedDate(date);
-    // CRITICAL FIX: Store date as simple YYYY-MM-DD string to avoid timezone shifts
-    const dateString = format(date, 'yyyy-MM-dd');
-    console.log('Storing date as string:', dateString);
-    onStateChange({ selectedDate: dateString });
+    onStateChange({ selectedDate: format(date, 'yyyy-MM-dd') });
   };
 
   const handleTimeSelect = (slot: TimeSlot) => {
-    console.log('Time slot selected:', slot);
-    console.log('Selected date object:', selectedDate);
-    
-    // CRITICAL FIX: Store the complete datetime properly
-    const selectedDateTime = new Date(slot.start);
+    onStateChange({ selectedTime: slot.start, selectedDate: selectedDate ? format(selectedDate, 'yyyy-MM-dd') : null });
+  };
+
+  const formatTimeSlot = (time: Date) => {
     const userTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-    
-    console.log('Selected datetime (UTC):', selectedDateTime.toISOString());
-    console.log('Selected datetime (user TZ):', selectedDateTime.toLocaleString("en-US", {timeZone: userTimezone}));
-    
-    onStateChange({ 
-      selectedTime: slot.start, // This is already in ISO format from the slot
-      selectedDate: selectedDate ? format(selectedDate, 'yyyy-MM-dd') : null
+    return time.toLocaleTimeString('en-US', { 
+      hour: appState.timeFormat === '24h' ? '2-digit' : 'numeric', 
+      minute: '2-digit', 
+      hour12: appState.timeFormat !== '24h', 
+      timeZone: userTimezone 
     });
   };
 
@@ -461,223 +328,156 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     );
   };
 
-  const isDateSelected = (date: Date) => {
-    return selectedDate && isSameDay(date, selectedDate);
-  };
-
-  const isTimeSelected = (slot: TimeSlot) => {
-    return appState.selectedTime === slot.start;
-  };
-
-  const formatTimeSlot = (time: Date) => {
-    // Format time in the selected timezone
-    const userTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-    
-    if (appState.timeFormat === '24h') {
-      return time.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit', 
-        hour12: false,
-        timeZone: userTimezone 
-      });
-    }
-    return time.toLocaleTimeString('en-US', { 
-      hour: 'numeric', 
-      minute: '2-digit', 
-      hour12: true,
-      timeZone: userTimezone 
-    });
-  };
-
-  // Check if we have any team members with calendar access
-  const hasConnectedMembers = connectedMembers.length > 0;
-  const hasSelectedConnectedMembers = selectedMembers.required.length > 0;
-
-  if (!hasConnectedMembers) {
-    return (
-      <div className="space-y-6">
-        <div className="text-center py-12">
-          <Calendar className="w-16 h-16 text-e3-white/40 mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-e3-white mb-2">No Calendar Connections</h3>
-          <p className="text-e3-white/60 mb-4">
-            Team members need to have Google Calendar connected to show availability.
-          </p>
-          <p className="text-e3-white/60 text-sm">
-            Go to Team Configuration to connect member calendars.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!hasSelectedConnectedMembers) {
-    return (
-      <div className="space-y-6">
-        <div className="text-center py-12">
-          <Users className="w-16 h-16 text-e3-white/40 mx-auto mb-4" />
-          <h3 className="text-xl font-bold text-e3-white mb-2">No Connected Members Selected</h3>
-          <p className="text-e3-white/60 mb-4">
-            Please select team members who have Google Calendar connected.
-          </p>
-          <p className="text-e3-white/60 text-sm">
-            Connected members: {connectedMembers.map(m => m.name).join(', ')}
-          </p>
-          <p className="text-e3-white/60 text-sm mt-2">
-            <span className="text-e3-emerald">Required:</span> {selectedMembers.required.map(m => m.name).join(', ')} | 
-            <span className="text-e3-azure ml-2">Optional:</span> {selectedMembers.optional.map(m => m.name).join(', ')}
-          </p>
-        </div>
-      </div>
-    );
-  }
+  if (connectedMembers.length === 0) return <div className="text-center py-12 text-e3-white/60">No connected team members found.</div>;
+  if (selectedMembers.all.length === 0) return <div className="text-center py-12 text-e3-white/60">Please go back and select team members.</div>;
 
   return (
-    // BALANCED LAYOUT UPDATE:
-    // 1. h-full and flex-col to manage vertical space
     <div className="flex flex-col h-full gap-4">
       
-      {/* Header section with compacted spacing */}
+      {/* HEADER SECTION */}
       <div className="flex-none space-y-3">
         <div className="flex items-center gap-3">
           <Calendar className="w-6 h-6 text-e3-azure" />
           <div>
             <h2 className="text-xl font-bold text-e3-white">Select Date & Time</h2>
-            <p className="text-e3-white/60 text-sm">Choose when you'd like to schedule the meeting</p>
+            <p className="text-e3-white/60 text-sm">Drag members to change their status</p>
           </div>
         </div>
 
-        {/* Team Members Section */}
-        {(selectedMembers.required.length > 0 || selectedMembers.optional.length > 0) && (
-          <div className="bg-e3-space-blue/30 rounded-lg p-3 border border-e3-azure/20">
-            <div className="flex items-center gap-2 mb-2">
-              <Info className="w-4 h-4 text-e3-azure" />
-              <span className="text-xs font-medium text-e3-azure">Checking availability for:</span>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {selectedMembers.required.length > 0 && (
-                <div>
-                  <div className="text-[10px] text-emerald-400 font-medium mb-1">Required Members</div>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedMembers.required.map((member, index) => {
-                      const colors = [
-                        'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
-                        'bg-green-500/20 text-green-400 border-green-500/40',
-                        'bg-teal-500/20 text-teal-400 border-teal-500/40',
-                        'bg-cyan-500/20 text-cyan-400 border-cyan-500/40'
-                      ];
-                      return (
-                        <div key={member?.id} className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${colors[index % colors.length]}`}>
-                          {member?.name}
-                        </div>
-                      );
-                    })}
-                  </div>
+        {/* TEAM MEMBERS DRAG & DROP ZONES */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* REQUIRED ZONE */}
+            <div 
+                className={`rounded-lg p-2 border border-e3-azure/20 transition-colors ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-e3-emerald/50' : 'bg-e3-space-blue/30'}`}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, 'required')}
+            >
+                <div className="flex items-center gap-2 mb-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <span className="text-xs font-bold text-e3-white uppercase tracking-wider">Required</span>
+                    <span className="text-[10px] text-e3-white/40">(Must be available)</span>
                 </div>
-              )}
-              
-              {selectedMembers.optional.length > 0 && (
-                <div>
-                  <div className="text-[10px] text-blue-400 font-medium mb-1">Optional Members</div>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedMembers.optional.map((member, index) => {
-                      const colors = [
-                        'bg-blue-500/20 text-blue-400 border-blue-500/40',
-                        'bg-indigo-500/20 text-indigo-400 border-indigo-500/40',
-                        'bg-purple-500/20 text-purple-400 border-purple-500/40',
-                        'bg-pink-500/20 text-pink-400 border-pink-500/40'
-                      ];
-                      return (
-                        <div key={member?.id} className={`px-2 py-0.5 rounded-full text-[10px] font-medium border ${colors[index % colors.length]}`}>
-                          {member?.name}
+                <div className="flex flex-wrap gap-2 min-h-[30px]">
+                    {selectedMembers.required.map(m => (
+                        <div 
+                            key={m.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, m.id, 'required')}
+                            className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
+                        >
+                            {m.name}
+                            <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full">
+                                <X className="w-3 h-3 opacity-70" />
+                            </button>
                         </div>
-                      );
-                    })}
-                  </div>
+                    ))}
+                    {selectedMembers.required.length === 0 && <span className="text-[10px] text-e3-white/20 italic p-1">Drop members here</span>}
                 </div>
-              )}
             </div>
-          </div>
-        )}
+
+            {/* OPTIONAL ZONE */}
+            <div 
+                className={`rounded-lg p-2 border border-e3-azure/20 transition-colors ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-blue-400/50' : 'bg-e3-space-blue/30'}`}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, 'optional')}
+            >
+                <div className="flex items-center gap-2 mb-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                    <span className="text-xs font-bold text-e3-white uppercase tracking-wider">Optional</span>
+                    <span className="text-[10px] text-e3-white/40">(Invited if free)</span>
+                </div>
+                <div className="flex flex-wrap gap-2 min-h-[30px]">
+                    {selectedMembers.optional.map(m => (
+                        <div 
+                            key={m.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, m.id, 'optional')}
+                            className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
+                        >
+                            {m.name}
+                            <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full">
+                                <X className="w-3 h-3 opacity-70" />
+                            </button>
+                        </div>
+                    ))}
+                    {selectedMembers.optional.length === 0 && <span className="text-[10px] text-e3-white/20 italic p-1">Drop members here</span>}
+                </div>
+            </div>
+        </div>
       </div>
 
-      {error && (
-        <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-2">
-          <p className="text-red-400 text-sm">{error}</p>
-        </div>
-      )}
+      {error && <div className="text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
 
-      {/* Main Content Area - Forces equal height columns */}
+      {/* MAIN CONTENT GRID */}
       <div className="flex-grow min-h-0">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
           
-          {/* Calendar Column */}
+          {/* CALENDAR COLUMN */}
           <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
             <div className="flex items-center justify-between mb-4 flex-none">
-              <h3 className="font-semibold text-e3-white">
-                {format(currentMonth, 'MMMM yyyy')}
-              </h3>
+              <h3 className="font-semibold text-e3-white text-sm">{format(currentMonth, 'MMMM yyyy')}</h3>
               <div className="flex gap-2">
-                <button
-                  onClick={() => navigateMonth('prev')}
-                  className="p-1.5 hover:bg-e3-white/10 rounded-lg transition"
-                >
-                  <ChevronLeft className="w-4 h-4 text-e3-white" />
-                </button>
-                <button
-                  onClick={() => navigateMonth('next')}
-                  className="p-1.5 hover:bg-e3-white/10 rounded-lg transition"
-                >
-                  <ChevronRight className="w-4 h-4 text-e3-white" />
-                </button>
+                <button onClick={() => navigateMonth('prev')} className="p-1.5 hover:bg-e3-white/10 rounded-lg transition"><ChevronLeft className="w-4 h-4 text-e3-white" /></button>
+                <button onClick={() => navigateMonth('next')} className="p-1.5 hover:bg-e3-white/10 rounded-lg transition"><ChevronRight className="w-4 h-4 text-e3-white" /></button>
               </div>
             </div>
 
             {loading && (
               <div className="text-center py-2">
                 <div className="w-5 h-5 border-2 border-e3-azure/30 border-t-e3-azure rounded-full animate-spin mx-auto mb-1" />
-                <p className="text-e3-white/60 text-xs">Loading availability...</p>
+                <p className="text-e3-white/60 text-xs">Checking calendars...</p>
               </div>
             )}
 
             <div className="grid grid-cols-7 gap-1 flex-grow content-start">
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => (
-                <div key={day} className="text-center text-xs font-medium text-e3-white/60 py-2">
-                  {day}
-                </div>
+              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(day => (
+                <div key={day} className="text-center text-xs font-medium text-e3-white/40 py-2">{day}</div>
               ))}
-              
               {calendarDays.map((date, index) => {
-                const isToday = isSameDay(date, new Date());
-                const isSelected = isDateSelected(date);
-                const isPast = date < new Date() && !isToday;
-                const hasAvailability = isDateAvailable(date);
                 const isCurrentMonth = date.getMonth() === currentMonth.getMonth();
+                const isSelected = selectedDate && isSameDay(date, selectedDate);
+                const isWorkDay = isWorkingDay(date);
+                const isPast = date < new Date() && !isSameDay(date, new Date());
                 
+                // Helper to check member availability for this specific day
+                const availableMembers = selectedMembers.all.filter(m => {
+                   if (!monthlyBusySchedule[m.email]) return false;
+                   // Simple check: does member have a busy slot that covers the WHOLE working day?
+                   // If not, they have *some* availability.
+                   return true; 
+                });
+
                 return (
                   <button
                     key={index}
-                    onClick={() => !isPast && isCurrentMonth && handleDateSelect(date)}
-                    disabled={isPast || !isCurrentMonth || (!hasAvailability && !loading)}
+                    onClick={() => !isPast && isWorkDay && handleDateSelect(date)}
+                    disabled={isPast || !isWorkDay || !isCurrentMonth}
                     className={`
-                      aspect-square p-1 rounded-lg text-xs font-medium transition relative flex items-center justify-center
-                      ${!isCurrentMonth 
-                        ? 'text-e3-white/20 cursor-not-allowed'
-                        : isSelected 
-                          ? 'bg-e3-emerald text-e3-space-blue font-bold shadow-lg' 
-                          : isToday
-                            ? 'bg-e3-emerald/20 text-e3-emerald hover:bg-e3-emerald/30'
-                            : isPast
-                              ? 'text-e3-white/30 cursor-not-allowed'
-                              : hasAvailability
-                                ? 'text-e3-white hover:bg-e3-white/10 ring-1 ring-e3-emerald/50 bg-e3-white/5'
-                                : 'text-e3-white/50 cursor-not-allowed'
-                      }
+                      aspect-square rounded-md text-xs font-medium relative flex flex-col items-center justify-center gap-1 transition-all
+                      ${!isCurrentMonth ? 'text-e3-white/10' 
+                        : isSelected ? 'bg-e3-emerald text-e3-space-blue font-bold shadow-lg' 
+                        : isWorkDay && !isPast ? 'text-e3-white bg-e3-white/5 hover:bg-e3-white/10' 
+                        : 'text-e3-white/20 cursor-not-allowed'}
                     `}
                   >
-                    {format(date, 'd')}
-                    {hasAvailability && !isSelected && isCurrentMonth && (
-                      <div className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-e3-emerald rounded-full" />
+                    <span>{format(date, 'd')}</span>
+                    {/* Render dots for available members on this day */}
+                    {!loading && isCurrentMonth && isWorkDay && !isPast && (
+                        <div className="flex gap-0.5 justify-center flex-wrap px-1 max-w-full">
+                           {selectedMembers.all.map(m => {
+                               // Check if member is completely blocked for the day (optional refinement)
+                               const busySlots = monthlyBusySchedule[m.email] || [];
+                               // If user has > 0 slots, we still show dot because they might be free at specific times
+                               return (
+                                   <div 
+                                     key={m.id} 
+                                     style={{ backgroundColor: m.color.hex }}
+                                     className="w-1 h-1 rounded-full" 
+                                     title={`${m.name} is potentially available`}
+                                   />
+                               )
+                           })}
+                        </div>
                     )}
                   </button>
                 );
@@ -685,113 +485,82 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             </div>
           </div>
 
-          {/* Time Slots Column */}
+          {/* TIME SLOTS COLUMN */}
           <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
-            {/* Duration & Format - Fixed header */}
             <div className="flex flex-col gap-3 mb-4 flex-none border-b border-e3-white/5 pb-3">
               <div className="flex items-center justify-between">
                  <h3 className="text-e3-white font-semibold text-sm">Duration</h3>
-                 {/* Time Format Toggle */}
                  <div className="flex items-center gap-1 bg-e3-space-blue border border-e3-white/10 rounded-md p-0.5">
-                   <button
-                     onClick={() => onStateChange({ timeFormat: '12h' })}
-                     className={`px-2 py-0.5 text-[10px] rounded transition-colors ${
-                       appState.timeFormat === '12h'
-                         ? 'bg-e3-azure text-e3-white'
-                         : 'text-e3-white/50 hover:text-e3-white'
-                     }`}
-                   >
-                     12h
-                   </button>
-                   <button
-                     onClick={() => onStateChange({ timeFormat: '24h' })}
-                     className={`px-2 py-0.5 text-[10px] rounded transition-colors ${
-                       appState.timeFormat === '24h'
-                         ? 'bg-e3-azure text-e3-white'
-                         : 'text-e3-white/50 hover:text-e3-white'
-                     }`}
-                   >
-                     24h
-                   </button>
+                   <button onClick={() => onStateChange({ timeFormat: '12h' })} className={`px-2 py-0.5 text-[10px] rounded ${appState.timeFormat === '12h' ? 'bg-e3-azure text-white' : 'text-e3-white/50'}`}>12h</button>
+                   <button onClick={() => onStateChange({ timeFormat: '24h' })} className={`px-2 py-0.5 text-[10px] rounded ${appState.timeFormat === '24h' ? 'bg-e3-azure text-white' : 'text-e3-white/50'}`}>24h</button>
                  </div>
               </div>
-
               <div className="flex gap-2">
-                {[15, 30, 45, 60, 90].map((duration) => (
-                  <button
-                    key={duration}
-                    onClick={() => onStateChange({ duration })}
-                    className={`flex-1 py-1.5 text-xs rounded-md transition-colors border ${
-                      appState.duration === duration
-                        ? 'bg-e3-emerald text-e3-space-blue border-e3-emerald font-medium'
-                        : 'border-e3-white/10 text-e3-white/70 hover:border-e3-white/30'
-                    }`}
+                {[15, 30, 45, 60, 90].map(dur => (
+                  <button 
+                    key={dur} 
+                    onClick={() => onStateChange({ duration: dur })}
+                    className={`flex-1 py-1.5 text-xs rounded border transition-colors ${appState.duration === dur ? 'bg-e3-emerald text-e3-space-blue border-e3-emerald font-medium' : 'border-e3-white/10 text-e3-white/70 hover:border-e3-white/30'}`}
                   >
-                    {`${duration}m`}
+                    {dur}m
                   </button>
                 ))}
               </div>
             </div>
-            
-            {/* Available Times List - Scrollable */}
+
+            {/* Header specifically for Available Times to make it visible */}
+            <h3 className="text-e3-white font-semibold text-sm mb-2 flex-none">Available Times</h3>
+
             <div className="flex-grow relative overflow-hidden min-h-[200px]">
                {!selectedDate ? (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center text-e3-white/30 text-sm">
-                      <Clock className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                      <p>Select a date to see times</p>
-                    </div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-e3-white/30">
+                    <Calendar className="w-8 h-8 mb-2 opacity-20" />
+                    <p className="text-xs">Select a date on the left</p>
                   </div>
                ) : loading ? (
                   <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="w-6 h-6 border-2 border-e3-azure/30 border-t-e3-azure rounded-full animate-spin mx-auto mb-2" />
-                      <p className="text-e3-white/60 text-xs">Loading availability...</p>
-                    </div>
+                    <div className="w-5 h-5 border-2 border-e3-azure/30 border-t-e3-azure rounded-full animate-spin" />
                   </div>
                ) : availableSlots.length === 0 ? (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center text-e3-white/40 text-xs px-4">
-                      <Clock className="w-8 h-8 mx-auto mb-2 opacity-20" />
-                      <p className="mb-2">No available times</p>
-                      <div className="bg-e3-flame/10 border border-e3-flame/20 rounded-lg p-2 mb-2 inline-block text-left">
-                        <p className="text-e3-flame text-[10px] mb-1 font-bold">Try adjusting:</p>
-                        <ul className="text-[10px] text-e3-white/70 space-y-0.5 list-disc pl-3">
-                          <li>Fewer required members</li>
-                          <li>Different duration</li>
-                          <li>Another date</li>
-                        </ul>
-                      </div>
-                    </div>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center text-e3-white/40 px-4 text-center">
+                    <Clock className="w-8 h-8 mb-2 opacity-20" />
+                    <p className="text-xs">No slots available.</p>
+                    <p className="text-[10px] opacity-70 mt-1">Try removing required members.</p>
                   </div>
                ) : (
-                  <div className="absolute inset-0 overflow-y-auto custom-scrollbar pr-2">
+                  <div className="absolute inset-0 overflow-y-auto custom-scrollbar pr-2 space-y-2">
                     <div className="grid grid-cols-2 gap-2 pb-2">
                       {availableSlots.map((slot, index) => {
-                        const startTime = new Date(slot.start);
-                        const isSelected = isTimeSelected(slot);
-                        
+                        const isSelected = appState.selectedTime === slot.start;
                          return (
                            <button
                              key={index}
                              onClick={() => handleTimeSelect(slot)}
                              className={`
-                               relative p-2 rounded-md text-xs font-medium transition-all duration-200 flex items-center justify-between border
+                               py-2 px-3 rounded text-xs font-medium border transition-all flex flex-col items-start gap-1.5
                                ${isSelected 
-                                 ? 'bg-e3-emerald text-e3-space-blue shadow-md border-e3-emerald' 
-                                 : 'bg-e3-space-blue/40 border-e3-white/10 text-e3-white hover:bg-e3-white/5 hover:border-e3-emerald/50'
-                               }
+                                 ? 'bg-e3-emerald text-e3-space-blue border-e3-emerald shadow-md' 
+                                 : 'bg-e3-space-blue/40 border-e3-white/10 text-e3-white hover:border-e3-emerald/50 hover:bg-e3-white/5'}
                              `}
                            >
-                             <span>{formatTimeSlot(startTime)}</span>
-                             <div className="flex items-center gap-0.5">
-                               {/* Show dots based on actual availability */}
-                               {slot.attendees?.some(a => a.type === 'required' && a.available) && (
-                                 <div className="w-1.5 h-1.5 bg-emerald-500 rounded-sm" title="Required members available" />
-                               )}
-                               {slot.attendees?.some(a => a.type === 'optional' && a.available) && (
-                                 <div className="w-1.5 h-1.5 bg-blue-500 rounded-full" title="Optional members available" />
-                               )}
+                             <div className="flex justify-between w-full items-center">
+                                <span>{formatTimeSlot(new Date(slot.start))}</span>
+                                {isSelected && <div className="w-1.5 h-1.5 bg-e3-space-blue rounded-full" />}
+                             </div>
+                             
+                             {/* AVAILABLE MEMBERS DOTS */}
+                             <div className="flex flex-wrap gap-1">
+                                {slot.attendees
+                                    .filter(a => a.available)
+                                    .map((attendee: any) => (
+                                        <div 
+                                            key={attendee.email}
+                                            style={{ backgroundColor: attendee.color?.hex }}
+                                            className="w-1.5 h-1.5 rounded-full"
+                                            title={`${attendee.name} is available`}
+                                        />
+                                    ))
+                                }
                              </div>
                            </button>
                          );
@@ -801,7 +570,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                )}
             </div>
              
-             {/* Timezone Selector - Fixed footer */}
              <div className="pt-3 border-t border-e3-white/5 mt-auto flex-none">
                <TimezoneSelector
                  value={appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone}
@@ -812,8 +580,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         </div>
       </div>
 
-      {/* Navigation Footer */}
-      <div className="flex flex-col sm:flex-row justify-between gap-4 pt-2 mt-auto border-t border-e3-white/5">
+      {/* FOOTER NAVIGATION - Added border-t, padding and margins to separate buttons */}
+      <div className="flex flex-col sm:flex-row justify-between gap-4 mt-2 flex-none pt-4 border-t border-e3-white/10">
         <button
           onClick={onBack}
           className="order-2 sm:order-1 py-2.5 px-6 text-sm text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
@@ -828,8 +596,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
           Continue
         </button>
       </div>
-
-      {/* Mobile sticky CTA */}
+      
+      {/* Mobile Sticky CTA */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-sm border-t border-e3-white/10 sm:hidden z-50">
         <button
           onClick={onNext}

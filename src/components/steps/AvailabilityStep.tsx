@@ -30,16 +30,19 @@ interface MemberColor {
   hex: string;
 }
 
-// Consistent colors for team members
+// EXPANDED PALETTE to prevent collisions
 const MEMBER_COLORS: MemberColor[] = [
-  { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-400', hex: '#34d399' },
-  { border: 'border-blue-500/40', bg: 'bg-blue-500/20', text: 'text-blue-400', hex: '#60a5fa' },
-  { border: 'border-purple-500/40', bg: 'bg-purple-500/20', text: 'text-purple-400', hex: '#c084fc' },
-  { border: 'border-amber-500/40', bg: 'bg-amber-500/20', text: 'text-amber-400', hex: '#fbbf24' },
-  { border: 'border-rose-500/40', bg: 'bg-rose-500/20', text: 'text-rose-400', hex: '#fb7185' },
-  { border: 'border-cyan-500/40', bg: 'bg-cyan-500/20', text: 'text-cyan-400', hex: '#22d3ee' },
-  { border: 'border-lime-500/40', bg: 'bg-lime-500/20', text: 'text-lime-400', hex: '#a3e635' },
-  { border: 'border-orange-500/40', bg: 'bg-orange-500/20', text: 'text-orange-400', hex: '#fb923c' },
+  { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-400', hex: '#34d399' }, // Emerald
+  { border: 'border-blue-500/40', bg: 'bg-blue-500/20', text: 'text-blue-400', hex: '#60a5fa' },       // Blue
+  { border: 'border-rose-500/40', bg: 'bg-rose-500/20', text: 'text-rose-400', hex: '#fb7185' },       // Rose
+  { border: 'border-amber-500/40', bg: 'bg-amber-500/20', text: 'text-amber-400', hex: '#fbbf24' },     // Amber
+  { border: 'border-purple-500/40', bg: 'bg-purple-500/20', text: 'text-purple-400', hex: '#c084fc' }, // Purple
+  { border: 'border-cyan-500/40', bg: 'bg-cyan-500/20', text: 'text-cyan-400', hex: '#22d3ee' },       // Cyan
+  { border: 'border-orange-500/40', bg: 'bg-orange-500/20', text: 'text-orange-400', hex: '#fb923c' }, // Orange
+  { border: 'border-lime-500/40', bg: 'bg-lime-500/20', text: 'text-lime-400', hex: '#a3e635' },       // Lime
+  { border: 'border-indigo-500/40', bg: 'bg-indigo-500/20', text: 'text-indigo-400', hex: '#818cf8' }, // Indigo
+  { border: 'border-pink-500/40', bg: 'bg-pink-500/20', text: 'text-pink-400', hex: '#f472b6' },       // Pink
+  { border: 'border-teal-500/40', bg: 'bg-teal-500/20', text: 'text-teal-400', hex: '#2dd4bf' },       // Teal
 ];
 
 const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, onBack, onStateChange, clientTeamFilter }) => {
@@ -57,14 +60,15 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   const { teamMembers, loading: membersLoading } = useTeamData();
   const { businessHours, getWorkingHoursForDate, isWorkingDay } = useBusinessHours(clientTeamFilter);
 
-  // --- COLOR UTILITY (Deterministic) ---
+  // --- IMPROVED COLOR HASH (DJB2 Algorithm) ---
+  // This reduces collisions significantly compared to simple addition
   const getMemberColor = (id: string): MemberColor => {
-    // Sum char codes to create a consistent hash from the ID
-    let hash = 0;
+    let hash = 5381;
     for (let i = 0; i < id.length; i++) {
-        hash += id.charCodeAt(i);
+        hash = ((hash << 5) + hash) + id.charCodeAt(i); // hash * 33 + c
     }
-    return MEMBER_COLORS[hash % MEMBER_COLORS.length];
+    // Force positive and map to array length
+    return MEMBER_COLORS[Math.abs(hash) % MEMBER_COLORS.length];
   };
 
   // 1. Filter connected members
@@ -146,7 +150,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   }, [appState.requiredMembers, appState.optionalMembers, connectedMembers]);
 
-  // 4. SELECTED MEMBERS
+  // 4. SELECTED MEMBERS (With Stable Colors)
   const selectedMembers = useMemo(() => {
     const requiredMembers = Array.from(appState.requiredMembers)
       .map(memberId => connectedMembers.find(m => m.id === memberId))
@@ -159,6 +163,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const allSelectedIds = new Set([...appState.requiredMembers, ...appState.optionalMembers]);
     const poolMembers = connectedMembers.filter(m => !allSelectedIds.has(m.id));
 
+    // Assign color using the improved hash
     const enhanceMember = (m: any) => ({ ...m, color: getMemberColor(m.id) });
 
     return { 
@@ -250,128 +255,145 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     loadMonthlyAvailability();
   }, [currentMonth, selectedMemberEmails.all.length > 0 ? selectedMemberEmails.all.join(',') : 'empty']);
 
-  // --- CORE SLOT GENERATION LOGIC ---
-  // Shared logic for both Calendar (Available Date Check) and Slots List
-  const generateSlotsForDate = (date: Date): TimeSlot[] => {
-    if (!schedulingSettings) return [];
+  // --- CALENDAR DOT LOGIC ---
+  // Calculates which members should show a dot on the calendar
+  const calendarDailyAvailability = useMemo(() => {
+    const map = new Map<string, Set<string>>(); // DateStr -> Set<MemberEmail>
 
-    const duration = appState.duration || 60;
-    const slots: TimeSlot[] = [];
-    
-    // Normalize date to 00:00:00 for working hours check
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const workingHours = getWorkingHoursForDate(startOfDay);
-    
-    if (!workingHours.start || !workingHours.end) return [];
-    
-    const [startHour, startMinute] = workingHours.start.split(':').map(Number);
-    const [endHour, endMinute] = workingHours.end.split(':').map(Number);
-    
-    const now = new Date();
-    const minDateTime = new Date(now.getTime() + schedulingSettings.min_notice_hours * 60 * 60 * 1000);
-    
-    const workingStart = new Date(startOfDay);
-    workingStart.setHours(startHour, startMinute, 0, 0);
-    
-    const workingEnd = new Date(startOfDay);
-    workingEnd.setHours(endHour, endMinute, 0, 0);
-    
-    let effectiveStart = new Date(workingStart);
-    if (startOfDay.toDateString() === now.toDateString() && effectiveStart < minDateTime) {
-      effectiveStart = new Date(minDateTime);
-    }
-    
-    let currentTime = new Date(effectiveStart);
-    
-    while (currentTime < workingEnd) {
-      const slotEnd = new Date(currentTime.getTime() + duration * 60000);
-      
-      // Strict Check: Slot must end before working day ends
-      if (slotEnd > workingEnd) break;
-
-      const requiredMembersAvailable: string[] = [];
-      let allRequiredAvailable = true;
-      
-      // CHECK REQUIRED
-      for (const email of selectedMemberEmails.required) {
-        const memberBusySlots = monthlyBusySchedule[email] || [];
-        const hasConflict = memberBusySlots.some(busySlot => {
-          const busyStart = new Date(busySlot.start);
-          const busyEnd = new Date(busySlot.end);
-          return currentTime < busyEnd && slotEnd > busyStart;
-        });
-        
-        if (!hasConflict) {
-          requiredMembersAvailable.push(email);
-        } else {
-          allRequiredAvailable = false;
-        }
-      }
-      
-      // Only generate slot if ALL required members are free
-      if (allRequiredAvailable) {
-        // CHECK OPTIONAL
-        const optionalMembersAvailable: string[] = [];
-        for (const member of selectedMembers.optional) {
-          const memberBusySlots = monthlyBusySchedule[member.email] || [];
-          const hasConflict = memberBusySlots.some(busySlot => {
-            const busyStart = new Date(busySlot.start);
-            const busyEnd = new Date(busySlot.end);
-            return currentTime < busyEnd && slotEnd > busyStart;
-          });
-          if (!hasConflict) optionalMembersAvailable.push(member.email);
-        }
-        
-        // Attach colors to attendees for UI
-        slots.push({
-          start: currentTime.toISOString(),
-          end: slotEnd.toISOString(),
-          attendees: [
-            ...selectedMembers.required.map(m => ({ 
-              name: m.name, email: m.email, type: 'required' as const, available: true, color: m.color 
-            })),
-            ...selectedMembers.optional.map(m => ({ 
-              name: m.name, email: m.email, type: 'optional' as const, available: optionalMembersAvailable.includes(m.email), color: m.color 
-            }))
-          ]
-        });
-      }
-      currentTime = new Date(currentTime.getTime() + duration * 60000);
-    }
-    return slots;
-  };
-
-  // --- CALENDAR VISUALS ---
-  // Pre-calculate which days have at least 1 valid slot
-  const availableDateSet = useMemo(() => {
-    if (selectedMemberEmails.required.length === 0 || !schedulingSettings) return new Set<string>();
-
-    const availableDates = new Set<string>();
-    
     calendarDays.forEach(date => {
-        // Optimization: Only check future dates within window
-        if (isSameDay(date, new Date()) || date > new Date()) {
-            const daySlots = generateSlotsForDate(date);
-            if (daySlots.length > 0) {
-                availableDates.add(format(date, 'yyyy-MM-dd'));
-            }
-        }
-    });
-    return availableDates;
-  }, [monthlyBusySchedule, calendarDays, appState.duration, selectedMemberEmails.required, schedulingSettings]);
+        const dateStr = format(date, 'yyyy-MM-dd');
+        const availableMembers = new Set<string>();
 
-  // --- SLOTS FOR SELECTED DATE ---
+        // 1. Basic Working Day Check
+        if (!isWorkingDay(date)) return;
+
+        const workingHours = getWorkingHoursForDate(date);
+        if (!workingHours.start || !workingHours.end) return;
+
+        const [sh, sm] = workingHours.start.split(':').map(Number);
+        const [eh, em] = workingHours.end.split(':').map(Number);
+        
+        // Define the "Business Day" boundaries for this specific date
+        const businessDayStart = new Date(date); businessDayStart.setHours(sh, sm, 0, 0);
+        const businessDayEnd = new Date(date); businessDayEnd.setHours(eh, em, 0, 0);
+
+        selectedMembers.all.forEach(member => {
+            const busySlots = monthlyBusySchedule[member.email] || [];
+            
+            // If they have no busy slots at all, they are free
+            if (busySlots.length === 0) {
+                availableMembers.add(member.email);
+                return;
+            }
+
+            // Check if they are blocked for the WHOLE business day
+            // We assume they are available unless we find a slot that covers Start->End
+            const isFullyBlocked = busySlots.some(slot => {
+                const s = new Date(slot.start);
+                const e = new Date(slot.end);
+                // If a single slot starts before work and ends after work, they are unavailable
+                return s <= businessDayStart && e >= businessDayEnd;
+            });
+
+            if (!isFullyBlocked) {
+                availableMembers.add(member.email);
+            }
+        });
+        map.set(dateStr, availableMembers);
+    });
+    return map;
+  }, [monthlyBusySchedule, calendarDays, selectedMembers.all]);
+
+
+  // --- TIME SLOT LOGIC ---
   useEffect(() => {
     if (!selectedDate || Object.keys(monthlyBusySchedule).length === 0 || !schedulingSettings) {
       setAvailableSlots([]);
       return;
     }
-    const slots = generateSlotsForDate(selectedDate);
-    setAvailableSlots(slots);
-  }, [selectedDate, monthlyBusySchedule, appState.duration, selectedMemberEmails.required, schedulingSettings]);
 
-  // --- HANDLERS ---
+    const calculateAvailableSlots = () => {
+      const duration = appState.duration || 60;
+      const slots: TimeSlot[] = [];
+      const cleanDate = new Date(selectedDate);
+      const workingHours = getWorkingHoursForDate(cleanDate);
+      
+      if (!workingHours.start || !workingHours.end) {
+        setAvailableSlots([]);
+        return;
+      }
+      
+      const [startHour, startMinute] = workingHours.start.split(':').map(Number);
+      const [endHour, endMinute] = workingHours.end.split(':').map(Number);
+      
+      const now = new Date();
+      const minDateTime = new Date(now.getTime() + schedulingSettings.min_notice_hours * 60 * 60 * 1000);
+      
+      const workingStart = new Date(cleanDate);
+      workingStart.setHours(startHour, startMinute, 0, 0);
+      
+      const workingEnd = new Date(cleanDate);
+      workingEnd.setHours(endHour, endMinute, 0, 0);
+      
+      let effectiveStart = new Date(workingStart);
+      if (cleanDate.toDateString() === now.toDateString() && effectiveStart < minDateTime) {
+        effectiveStart = new Date(minDateTime);
+      }
+      
+      let currentTime = new Date(effectiveStart);
+      
+      while (currentTime < workingEnd) {
+        const slotEnd = new Date(currentTime.getTime() + duration * 60000);
+        if (slotEnd > workingEnd) break;
+
+        const requiredMembersAvailable: string[] = [];
+        let allRequiredAvailable = true;
+        
+        for (const email of selectedMemberEmails.required) {
+          const memberBusySlots = monthlyBusySchedule[email] || [];
+          const hasConflict = memberBusySlots.some(busySlot => {
+            const busyStart = new Date(busySlot.start);
+            const busyEnd = new Date(busySlot.end);
+            return currentTime < busyEnd && slotEnd > busyStart;
+          });
+          
+          if (!hasConflict) requiredMembersAvailable.push(email);
+          else allRequiredAvailable = false;
+        }
+        
+        if (allRequiredAvailable) {
+          const optionalMembersAvailable: string[] = [];
+          for (const member of selectedMembers.optional) {
+            const memberBusySlots = monthlyBusySchedule[member.email] || [];
+            const hasConflict = memberBusySlots.some(busySlot => {
+              const busyStart = new Date(busySlot.start);
+              const busyEnd = new Date(busySlot.end);
+              return currentTime < busyEnd && slotEnd > busyStart;
+            });
+            if (!hasConflict) optionalMembersAvailable.push(member.email);
+          }
+          
+          slots.push({
+            start: currentTime.toISOString(),
+            end: slotEnd.toISOString(),
+            attendees: [
+              ...selectedMembers.required.map(m => ({ 
+                name: m.name, email: m.email, type: 'required' as const, available: true, color: m.color 
+              })),
+              ...selectedMembers.optional.map(m => ({ 
+                name: m.name, email: m.email, type: 'optional' as const, available: optionalMembersAvailable.includes(m.email), color: m.color 
+              }))
+            ]
+          });
+        }
+        currentTime = new Date(currentTime.getTime() + duration * 60000);
+      }
+      setAvailableSlots(slots);
+    };
+    calculateAvailableSlots();
+  }, [selectedDate, monthlyBusySchedule, appState.duration, appState.timezone, selectedMemberEmails.required, schedulingSettings]);
+
+  // --- DRAG HANDLERS ---
 
   const handleDragStart = (e: React.DragEvent, memberId: string, from: 'required' | 'optional' | 'pool') => {
     setDraggedMember({ id: memberId, from });
@@ -604,8 +626,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                 const isSelected = selectedDate && isSameDay(date, selectedDate);
                 const isWorkDay = isWorkingDay(date);
                 const isPast = date < new Date() && !isSameDay(date, new Date());
-                const hasAvailability = availableDateSet.has(format(date, 'yyyy-MM-dd'));
                 
+                // Get available members for this specific day using the map
+                const dateStr = format(date, 'yyyy-MM-dd');
+                const freeMembersForDay = calendarDailyAvailability.get(dateStr) || new Set();
+
                 return (
                   <button
                     key={index}
@@ -615,24 +640,26 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                       aspect-square rounded-md text-xs font-medium relative flex flex-col items-center justify-center gap-1 transition-all
                       ${!isCurrentMonth ? 'text-e3-white/10' 
                         : isSelected ? 'bg-e3-emerald text-e3-space-blue font-bold shadow-lg' 
-                        : isWorkDay && !isPast && hasAvailability ? 'text-e3-white bg-e3-white/5 hover:bg-e3-white/10' 
+                        : isWorkDay && !isPast ? 'text-e3-white bg-e3-white/5 hover:bg-e3-white/10' 
                         : 'text-e3-white/20 cursor-not-allowed'}
                     `}
                   >
                     <span>{format(date, 'd')}</span>
                     
-                    {/* Only show dots if date is actually clickable */}
-                    {!loading && isCurrentMonth && isWorkDay && !isPast && hasAvailability && (
+                    {!loading && isCurrentMonth && isWorkDay && !isPast && (
                         <div className="flex gap-0.5 justify-center flex-wrap px-1 max-w-full">
-                           {/* Simply show a dot for every required/optional member if the day is generally available.
-                               Detailed availability is handled by clicking the day. */}
-                           {selectedMembers.all.map(m => (
-                               <div 
-                                 key={m.id} 
-                                 style={{ backgroundColor: m.color.hex }}
-                                 className="w-1 h-1 rounded-full" 
-                               />
-                           ))}
+                           {selectedMembers.all.map(m => {
+                               // Only render dot if they are in the "Free Set" for this day
+                               if (!freeMembersForDay.has(m.email)) return null;
+                               
+                               return (
+                                   <div 
+                                     key={m.id} 
+                                     style={{ backgroundColor: m.color.hex }}
+                                     className="w-1 h-1 rounded-full" 
+                                   />
+                               )
+                           })}
                         </div>
                     )}
                   </button>

@@ -52,7 +52,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   const [schedulingSettings, setSchedulingSettings] = useState<SchedulingWindowSettings | null>(null);
   const [draggedMember, setDraggedMember] = useState<{ id: string, from: 'required' | 'optional' | 'pool' } | null>(null);
   
-  // Ref to track if we've handled the initial URL read
   const hasInitialized = useRef(false);
 
   const { teamMembers, loading: membersLoading } = useTeamData();
@@ -69,7 +68,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     });
   }, [teamMembers, clientTeamFilter]);
 
-  // 2. INITIALIZATION: Read URL params on load
+  // 2. INITIALIZATION: Read URL params (Emails) on load
   useEffect(() => {
     if (membersLoading || connectedMembers.length === 0) return;
     if (hasInitialized.current) return;
@@ -82,26 +81,25 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const newOptional = new Set<string>();
 
     const findMember = (identifier: string) => 
-      connectedMembers.find(m => m.id === identifier || m.email === identifier);
+      connectedMembers.find(m => m.email === identifier || m.id === identifier);
 
     if (requiredParam || optionalParam) {
       if (requiredParam) {
-        requiredParam.split(',').forEach(id => {
-          const member = findMember(id.trim());
+        requiredParam.split(',').forEach(email => {
+          const member = findMember(email.trim());
           if (member) newRequired.add(member.id);
         });
       }
       if (optionalParam) {
-        optionalParam.split(',').forEach(id => {
-          const member = findMember(id.trim());
+        optionalParam.split(',').forEach(email => {
+          const member = findMember(email.trim());
           if (member && !newRequired.has(member.id)) newOptional.add(member.id);
         });
       }
     } else if (appState.requiredMembers.size === 0 && appState.optionalMembers.size === 0) {
-      // Default: Select all as required if state is empty
+      // Default: Select all as required
       connectedMembers.forEach(m => newRequired.add(m.id));
     } else {
-      // State exists (user navigated back), keep it
       hasInitialized.current = true;
       return;
     }
@@ -112,29 +110,35 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     hasInitialized.current = true;
   }, [connectedMembers, membersLoading, appState.requiredMembers, appState.optionalMembers, onStateChange]);
 
-  // 3. SYNCHRONIZATION: Update URL when selection changes
+  // 3. URL SYNCHRONIZATION: Update URL with Emails when selection changes
   useEffect(() => {
     if (!hasInitialized.current) return;
 
     const params = new URLSearchParams(window.location.search);
     
-    // IDs to CSV
-    const reqIds = Array.from(appState.requiredMembers).join(',');
-    const optIds = Array.from(appState.optionalMembers).join(',');
+    // Map IDs to Emails for clean URLs
+    const reqEmails = Array.from(appState.requiredMembers)
+      .map(id => connectedMembers.find(m => m.id === id)?.email)
+      .filter(Boolean)
+      .join(',');
+      
+    const optEmails = Array.from(appState.optionalMembers)
+      .map(id => connectedMembers.find(m => m.id === id)?.email)
+      .filter(Boolean)
+      .join(',');
 
-    if (reqIds) params.set('required', reqIds);
+    if (reqEmails) params.set('required', reqEmails);
     else params.delete('required');
 
-    if (optIds) params.set('optional', optIds);
+    if (optEmails) params.set('optional', optEmails);
     else params.delete('optional');
 
-    // Update URL without reloading
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', newUrl);
 
-  }, [appState.requiredMembers, appState.optionalMembers]);
+  }, [appState.requiredMembers, appState.optionalMembers, connectedMembers]);
 
-  // 4. Resolve selected members objects
+  // 4. Resolve selected members
   const selectedMembers = useMemo(() => {
     const requiredMembers = Array.from(appState.requiredMembers)
       .map(memberId => connectedMembers.find(m => m.id === memberId))
@@ -147,6 +151,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const allSelectedIds = new Set([...appState.requiredMembers, ...appState.optionalMembers]);
     const poolMembers = connectedMembers.filter(m => !allSelectedIds.has(m.id));
 
+    // Assign color based on index in full list to keep it stable
     const assignColor = (memberId: string): MemberColor => {
        const index = connectedMembers.findIndex(m => m.id === memberId);
        return MEMBER_COLORS[Math.max(0, index) % MEMBER_COLORS.length];
@@ -243,39 +248,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     loadMonthlyAvailability();
   }, [currentMonth, selectedMemberEmails.all.length > 0 ? selectedMemberEmails.all.join(',') : 'empty']);
 
-  // --- HELPER: CHECK IF MEMBER IS AVAILABLE ON A DAY ---
-  const isMemberFreeOnDate = (memberEmail: string, date: Date) => {
-    const busySlots = monthlyBusySchedule[memberEmail] || [];
-    if (busySlots.length === 0) return true;
-
-    // Check if any slot is an "all day" block or covers working hours
-    // Simplified Logic: If they have a slot > 8 hours on this day, they are busy.
-    // Or if they have a slot that matches the day start/end.
-    
-    // Convert date to YYYY-MM-DD for comparison
-    const dateStr = format(date, 'yyyy-MM-dd');
-    
-    return !busySlots.some(slot => {
-        const start = new Date(slot.start);
-        const end = new Date(slot.end);
-        
-        // Check if slot overlaps this day
-        const slotStartStr = format(start, 'yyyy-MM-dd');
-        const slotEndStr = format(end, 'yyyy-MM-dd');
-        
-        // If slot starts before today and ends after today (multiday event) -> Busy
-        if (start < date && end > new Date(date.getTime() + 86400000)) return true;
-        
-        // If slot is on this day and duration > 12 hours -> Busy (All day)
-        if (slotStartStr === dateStr) {
-            const durationHrs = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-            if (durationHrs >= 12) return true;
-        }
-        
-        return false;
-    });
-  };
-
   // --- AVAILABILITY CALCULATION ---
 
   useEffect(() => {
@@ -320,14 +292,18 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         
         for (const email of selectedMemberEmails.required) {
           const memberBusySlots = monthlyBusySchedule[email] || [];
+          
           const hasConflict = memberBusySlots.some(busySlot => {
             const busyStart = new Date(busySlot.start);
             const busyEnd = new Date(busySlot.end);
             return currentTime < busyEnd && slotEnd > busyStart;
           });
           
-          if (!hasConflict) requiredMembersAvailable.push(email);
-          else allRequiredAvailable = false;
+          if (!hasConflict) {
+            requiredMembersAvailable.push(email);
+          } else {
+            allRequiredAvailable = false;
+          }
         }
         
         if (allRequiredAvailable && slotEnd <= workingEnd) {
@@ -347,7 +323,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             end: slotEnd.toISOString(),
             attendees: [
               ...selectedMembers.required.map(m => ({ 
-                name: m.name, email: m.email, type: 'required' as const, available: requiredMembersAvailable.includes(m.email), color: m.color 
+                name: m.name, email: m.email, type: 'required' as const, available: true, color: m.color 
               })),
               ...selectedMembers.optional.map(m => ({ 
                 name: m.name, email: m.email, type: 'optional' as const, available: optionalMembersAvailable.includes(m.email), color: m.color 
@@ -362,7 +338,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     calculateAvailableSlots();
   }, [selectedDate, monthlyBusySchedule, appState.duration, appState.timezone, selectedMemberEmails.required, schedulingSettings]);
 
-  // --- HANDLERS ---
+  // --- DRAG HANDLERS ---
 
   const handleDragStart = (e: React.DragEvent, memberId: string, from: 'required' | 'optional' | 'pool') => {
     setDraggedMember({ id: memberId, from });
@@ -407,6 +383,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     onStateChange({ requiredMembers: newRequired, optionalMembers: newOptional });
   };
 
+  // --- UI HELPERS ---
+
   const handleDateSelect = (date: Date) => {
     setSelectedDate(date);
     onStateChange({ selectedDate: format(date, 'yyyy-MM-dd') });
@@ -441,7 +419,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   return (
     <div className="flex flex-col h-full gap-4">
-      {/* HEADER */}
       <div className="flex-none space-y-3">
         <div className="flex items-center gap-3">
           <Calendar className="w-6 h-6 text-e3-azure" />
@@ -451,7 +428,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
           </div>
         </div>
 
-        {/* DRAG & DROP ZONES */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {/* REQUIRED */}
             <div 
@@ -548,7 +524,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
       {error && <div className="text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
 
-      {/* CALENDAR & SLOTS */}
       <div className="flex-grow min-h-0">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
           
@@ -594,20 +569,25 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                   >
                     <span>{format(date, 'd')}</span>
                     
-                    {/* DOTS: Only show for members who are ACTUALLY free on this day */}
                     {!loading && isCurrentMonth && isWorkDay && !isPast && (
                         <div className="flex gap-0.5 justify-center flex-wrap px-1 max-w-full">
                            {selectedMembers.all.map(m => {
-                               // Check availability for this specific day
-                               const isFree = isMemberFreeOnDate(m.email, date);
-                               if (!isFree) return null; // Don't show dot if busy/OOO
+                               // Check general busy status for the day (simplified visual aid)
+                               const busySlots = monthlyBusySchedule[m.email] || [];
+                               const isGenerallyBusy = busySlots.some(s => {
+                                  const start = new Date(s.start);
+                                  const end = new Date(s.end);
+                                  // Very rough check: if they have a >12h block on this day
+                                  return isSameDay(start, date) && (end.getTime() - start.getTime()) > 12 * 3600000;
+                               });
+                               
+                               if (isGenerallyBusy) return null;
 
                                return (
                                    <div 
                                      key={m.id} 
                                      style={{ backgroundColor: m.color.hex }}
                                      className="w-1 h-1 rounded-full" 
-                                     title={`${m.name} is available`}
                                    />
                                )
                            })}
@@ -683,7 +663,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                              
                              <div className="flex flex-wrap gap-1">
                                 {slot.attendees
-                                    .filter(a => a.available) // Only show dot if specifically available for this slot
+                                    .filter(a => a.available)
                                     .map((attendee: any) => (
                                         <div 
                                             key={attendee.email}
@@ -721,7 +701,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         </button>
       </div>
       
-      {/* Mobile Sticky CTA */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-sm border-t border-e3-white/10 sm:hidden z-50">
         <button onClick={onNext} disabled={!appState.selectedDate || !appState.selectedTime} className="w-full cta py-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
           Continue

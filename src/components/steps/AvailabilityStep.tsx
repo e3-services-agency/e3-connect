@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Calendar, Clock, Users, ChevronLeft, ChevronRight, Info, X, RotateCcw, Link as LinkIcon, Trash2 } from 'lucide-react';
+import { Calendar, Clock, Users, ChevronLeft, ChevronRight, Info, X, Trash2 } from 'lucide-react';
 import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
 import { useTeamData } from '../../hooks/useTeamData';
 import { supabase } from '../../integrations/supabase/client';
@@ -52,13 +52,13 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   const [schedulingSettings, setSchedulingSettings] = useState<SchedulingWindowSettings | null>(null);
   const [draggedMember, setDraggedMember] = useState<{ id: string, from: 'required' | 'optional' | 'pool' } | null>(null);
   
-  // Refs to prevent double-initialization
+  // Ref to track if we've handled the initial URL read
   const hasInitialized = useRef(false);
 
   const { teamMembers, loading: membersLoading } = useTeamData();
   const { businessHours, getWorkingHoursForDate, isWorkingDay } = useBusinessHours(clientTeamFilter);
 
-  // 1. Filter connected members & apply client filter if exists
+  // 1. Filter connected members
   const connectedMembers = useMemo(() => {
     return teamMembers.filter(member => {
       const hasCalendar = member.googleCalendarConnected || member.email;
@@ -69,9 +69,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     });
   }, [teamMembers, clientTeamFilter]);
 
-  // --- INITIALIZATION LOGIC (URL & DEFAULTS) ---
+  // 2. INITIALIZATION: Read URL params on load
   useEffect(() => {
-    // Wait for members to load
     if (membersLoading || connectedMembers.length === 0) return;
     if (hasInitialized.current) return;
 
@@ -82,11 +81,10 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const newRequired = new Set<string>();
     const newOptional = new Set<string>();
 
-    if (requiredParam || optionalParam) {
-      // --- LOGIC A: URL PARAMS FOUND ---
-      const findMember = (identifier: string) => 
-        connectedMembers.find(m => m.id === identifier || m.email === identifier);
+    const findMember = (identifier: string) => 
+      connectedMembers.find(m => m.id === identifier || m.email === identifier);
 
+    if (requiredParam || optionalParam) {
       if (requiredParam) {
         requiredParam.split(',').forEach(id => {
           const member = findMember(id.trim());
@@ -100,26 +98,43 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         });
       }
     } else if (appState.requiredMembers.size === 0 && appState.optionalMembers.size === 0) {
-      // --- LOGIC B: NO PARAMS & EMPTY STATE (First Load) ---
-      // Default behavior: Select ALL connected members as required
+      // Default: Select all as required if state is empty
       connectedMembers.forEach(m => newRequired.add(m.id));
     } else {
-      // --- LOGIC C: STATE ALREADY EXISTS ---
-      // User navigated back from a later step, keep existing selection
+      // State exists (user navigated back), keep it
       hasInitialized.current = true;
       return;
     }
 
-    // Apply the selection
     if (newRequired.size > 0 || newOptional.size > 0) {
       onStateChange({ requiredMembers: newRequired, optionalMembers: newOptional });
     }
-    
     hasInitialized.current = true;
   }, [connectedMembers, membersLoading, appState.requiredMembers, appState.optionalMembers, onStateChange]);
 
+  // 3. SYNCHRONIZATION: Update URL when selection changes
+  useEffect(() => {
+    if (!hasInitialized.current) return;
 
-  // 2. Resolve selected members from IDs
+    const params = new URLSearchParams(window.location.search);
+    
+    // IDs to CSV
+    const reqIds = Array.from(appState.requiredMembers).join(',');
+    const optIds = Array.from(appState.optionalMembers).join(',');
+
+    if (reqIds) params.set('required', reqIds);
+    else params.delete('required');
+
+    if (optIds) params.set('optional', optIds);
+    else params.delete('optional');
+
+    // Update URL without reloading
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState({}, '', newUrl);
+
+  }, [appState.requiredMembers, appState.optionalMembers]);
+
+  // 4. Resolve selected members objects
   const selectedMembers = useMemo(() => {
     const requiredMembers = Array.from(appState.requiredMembers)
       .map(memberId => connectedMembers.find(m => m.id === memberId))
@@ -129,7 +144,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       .map(memberId => connectedMembers.find(m => m.id === memberId))
       .filter(Boolean);
     
-    // Identify unselected members (pool)
     const allSelectedIds = new Set([...appState.requiredMembers, ...appState.optionalMembers]);
     const poolMembers = connectedMembers.filter(m => !allSelectedIds.has(m.id));
 
@@ -155,14 +169,13 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     };
   }, [selectedMembers]);
 
-  // 3. Calendar Data
   const calendarDays = useMemo(() => {
     const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
     const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
     return eachDayOfInterval({ start, end });
   }, [currentMonth]);
 
-  // --- SETTINGS & DATA LOADING ---
+  // --- DATA LOADING ---
   
   useEffect(() => {
     const loadSchedulingSettings = async () => {
@@ -222,7 +235,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         }
         setMonthlyBusySchedule(memberBusySchedules);
       } catch {
-        // Silent fail on error to avoid blocking UI, just show empty
         setMonthlyBusySchedule({});
       } finally {
         setLoading(false);
@@ -230,6 +242,39 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     };
     loadMonthlyAvailability();
   }, [currentMonth, selectedMemberEmails.all.length > 0 ? selectedMemberEmails.all.join(',') : 'empty']);
+
+  // --- HELPER: CHECK IF MEMBER IS AVAILABLE ON A DAY ---
+  const isMemberFreeOnDate = (memberEmail: string, date: Date) => {
+    const busySlots = monthlyBusySchedule[memberEmail] || [];
+    if (busySlots.length === 0) return true;
+
+    // Check if any slot is an "all day" block or covers working hours
+    // Simplified Logic: If they have a slot > 8 hours on this day, they are busy.
+    // Or if they have a slot that matches the day start/end.
+    
+    // Convert date to YYYY-MM-DD for comparison
+    const dateStr = format(date, 'yyyy-MM-dd');
+    
+    return !busySlots.some(slot => {
+        const start = new Date(slot.start);
+        const end = new Date(slot.end);
+        
+        // Check if slot overlaps this day
+        const slotStartStr = format(start, 'yyyy-MM-dd');
+        const slotEndStr = format(end, 'yyyy-MM-dd');
+        
+        // If slot starts before today and ends after today (multiday event) -> Busy
+        if (start < date && end > new Date(date.getTime() + 86400000)) return true;
+        
+        // If slot is on this day and duration > 12 hours -> Busy (All day)
+        if (slotStartStr === dateStr) {
+            const durationHrs = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+            if (durationHrs >= 12) return true;
+        }
+        
+        return false;
+    });
+  };
 
   // --- AVAILABILITY CALCULATION ---
 
@@ -281,11 +326,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             return currentTime < busyEnd && slotEnd > busyStart;
           });
           
-          if (!hasConflict) {
-            requiredMembersAvailable.push(email);
-          } else {
-            allRequiredAvailable = false;
-          }
+          if (!hasConflict) requiredMembersAvailable.push(email);
+          else allRequiredAvailable = false;
         }
         
         if (allRequiredAvailable && slotEnd <= workingEnd) {
@@ -320,7 +362,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     calculateAvailableSlots();
   }, [selectedDate, monthlyBusySchedule, appState.duration, appState.timezone, selectedMemberEmails.required, schedulingSettings]);
 
-  // --- DRAG AND DROP LOGIC ---
+  // --- HANDLERS ---
 
   const handleDragStart = (e: React.DragEvent, memberId: string, from: 'required' | 'optional' | 'pool') => {
     setDraggedMember({ id: memberId, from });
@@ -328,9 +370,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
+  const handleDragOver = (e: React.DragEvent) => e.preventDefault();
 
   const handleDrop = (e: React.DragEvent, to: 'required' | 'optional' | 'pool') => {
     e.preventDefault();
@@ -340,15 +380,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         const newRequired = new Set(appState.requiredMembers);
         const newOptional = new Set(appState.optionalMembers);
 
-        // Remove from source
         if (draggedMember.from === 'required') newRequired.delete(draggedMember.id);
         else if (draggedMember.from === 'optional') newOptional.delete(draggedMember.id);
-        // 'pool' doesn't need delete, it's computed
 
-        // Add to destination
         if (to === 'required') newRequired.add(draggedMember.id);
         else if (to === 'optional') newOptional.add(draggedMember.id);
-        // 'pool' implies simply removing from sets
 
         onStateChange({ requiredMembers: newRequired, optionalMembers: newOptional });
     }
@@ -366,17 +402,12 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   const clearSection = (section: 'required' | 'optional') => {
     const newRequired = new Set(appState.requiredMembers);
     const newOptional = new Set(appState.optionalMembers);
-    
     if (section === 'required') newRequired.clear();
     if (section === 'optional') newOptional.clear();
-    
     onStateChange({ requiredMembers: newRequired, optionalMembers: newOptional });
   };
 
-  // --- UI HANDLERS ---
-
   const handleDateSelect = (date: Date) => {
-    console.log('Date selected:', date);
     setSelectedDate(date);
     onStateChange({ selectedDate: format(date, 'yyyy-MM-dd') });
   };
@@ -405,41 +436,24 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     );
   };
 
-  if (membersLoading) {
-    return (
-      <div className="space-y-6 text-center py-12">
-        <div className="w-8 h-8 border-2 border-e3-azure/30 border-t-e3-azure rounded-full animate-spin mx-auto mb-4" />
-        <p className="text-e3-white/60">Loading team configuration...</p>
-      </div>
-    );
-  }
-
-  // Fallback if API fails completely
-  if (connectedMembers.length === 0) {
-    return (
-      <div className="space-y-6 text-center py-12">
-        <Calendar className="w-16 h-16 text-e3-white/40 mx-auto mb-4" />
-        <h3 className="text-xl font-bold text-e3-white mb-2">No Calendar Connections</h3>
-        <p className="text-e3-white/60">Team members need to have Google Calendar connected.</p>
-      </div>
-    );
-  }
+  if (membersLoading) return <div className="text-center py-12 text-e3-white/60">Loading team...</div>;
+  if (connectedMembers.length === 0) return <div className="text-center py-12 text-e3-white/60">No connected team members found.</div>;
 
   return (
     <div className="flex flex-col h-full gap-4">
-      {/* HEADER SECTION */}
+      {/* HEADER */}
       <div className="flex-none space-y-3">
         <div className="flex items-center gap-3">
           <Calendar className="w-6 h-6 text-e3-azure" />
           <div>
             <h2 className="text-xl font-bold text-e3-white">Select Date & Time</h2>
-            <p className="text-e3-white/60 text-sm">Drag members to change their status</p>
+            <p className="text-e3-white/60 text-sm">Drag members to change status</p>
           </div>
         </div>
 
-        {/* TEAM MEMBERS DRAG & DROP ZONES */}
+        {/* DRAG & DROP ZONES */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {/* REQUIRED ZONE */}
+            {/* REQUIRED */}
             <div 
                 className={`rounded-lg p-2 border border-e3-azure/20 transition-colors ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-e3-emerald/50' : 'bg-e3-space-blue/30'}`}
                 onDragOver={handleDragOver}
@@ -466,16 +480,14 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                             className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
                         >
                             {m.name}
-                            <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full">
-                                <X className="w-3 h-3 opacity-70" />
-                            </button>
+                            <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full"><X className="w-3 h-3 opacity-70" /></button>
                         </div>
                     ))}
                     {selectedMembers.required.length === 0 && <span className="text-[10px] text-e3-white/20 italic p-1">Drop members here</span>}
                 </div>
             </div>
 
-            {/* OPTIONAL ZONE */}
+            {/* OPTIONAL */}
             <div 
                 className={`rounded-lg p-2 border border-e3-azure/20 transition-colors ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-blue-400/50' : 'bg-e3-space-blue/30'}`}
                 onDragOver={handleDragOver}
@@ -502,9 +514,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                             className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
                         >
                             {m.name}
-                            <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full">
-                                <X className="w-3 h-3 opacity-70" />
-                            </button>
+                            <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full"><X className="w-3 h-3 opacity-70" /></button>
                         </div>
                     ))}
                     {selectedMembers.optional.length === 0 && <span className="text-[10px] text-e3-white/20 italic p-1">Drop members here</span>}
@@ -512,7 +522,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             </div>
         </div>
 
-        {/* POOL ZONE (UNSELECTED MEMBERS) */}
+        {/* POOL */}
         {selectedMembers.pool.length > 0 && (
             <div 
                 className="rounded-lg p-2 border border-e3-white/10 bg-e3-space-blue/20"
@@ -538,11 +548,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
       {error && <div className="text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
 
-      {/* MAIN CONTENT GRID */}
+      {/* CALENDAR & SLOTS */}
       <div className="flex-grow min-h-0">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
           
-          {/* CALENDAR COLUMN */}
+          {/* CALENDAR */}
           <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
             <div className="flex items-center justify-between mb-4 flex-none">
               <h3 className="font-semibold text-e3-white text-sm">{format(currentMonth, 'MMMM yyyy')}</h3>
@@ -583,16 +593,24 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                     `}
                   >
                     <span>{format(date, 'd')}</span>
-                    {/* Render dots for available members */}
+                    
+                    {/* DOTS: Only show for members who are ACTUALLY free on this day */}
                     {!loading && isCurrentMonth && isWorkDay && !isPast && (
                         <div className="flex gap-0.5 justify-center flex-wrap px-1 max-w-full">
-                           {selectedMembers.all.map(m => (
-                               <div 
-                                 key={m.id} 
-                                 style={{ backgroundColor: m.color.hex }}
-                                 className="w-1 h-1 rounded-full" 
-                               />
-                           ))}
+                           {selectedMembers.all.map(m => {
+                               // Check availability for this specific day
+                               const isFree = isMemberFreeOnDate(m.email, date);
+                               if (!isFree) return null; // Don't show dot if busy/OOO
+
+                               return (
+                                   <div 
+                                     key={m.id} 
+                                     style={{ backgroundColor: m.color.hex }}
+                                     className="w-1 h-1 rounded-full" 
+                                     title={`${m.name} is available`}
+                                   />
+                               )
+                           })}
                         </div>
                     )}
                   </button>
@@ -601,7 +619,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             </div>
           </div>
 
-          {/* TIME SLOTS COLUMN */}
+          {/* SLOTS */}
           <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
             <div className="flex flex-col gap-3 mb-4 flex-none border-b border-e3-white/5 pb-3">
               <div className="flex items-center justify-between">
@@ -665,7 +683,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                              
                              <div className="flex flex-wrap gap-1">
                                 {slot.attendees
-                                    .filter(a => a.available)
+                                    .filter(a => a.available) // Only show dot if specifically available for this slot
                                     .map((attendee: any) => (
                                         <div 
                                             key={attendee.email}
@@ -695,28 +713,17 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       </div>
 
       <div className="flex flex-col sm:flex-row justify-between gap-4 mt-2 flex-none pt-4 border-t border-e3-white/10">
-        <button
-          onClick={onBack}
-          className="order-2 sm:order-1 py-2.5 px-6 text-sm text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
-        >
+        <button onClick={onBack} className="order-2 sm:order-1 py-2.5 px-6 text-sm text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40">
           Back
         </button>
-        <button
-          onClick={onNext}
-          disabled={!appState.selectedDate || !appState.selectedTime}
-          className="order-1 sm:order-2 cta py-2.5 px-8 text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-e3-emerald/20"
-        >
+        <button onClick={onNext} disabled={!appState.selectedDate || !appState.selectedTime} className="order-1 sm:order-2 cta py-2.5 px-8 text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-e3-emerald/20">
           Continue
         </button>
       </div>
       
       {/* Mobile Sticky CTA */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-sm border-t border-e3-white/10 sm:hidden z-50">
-        <button
-          onClick={onNext}
-          disabled={!appState.selectedDate || !appState.selectedTime}
-          className="w-full cta py-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+        <button onClick={onNext} disabled={!appState.selectedDate || !appState.selectedTime} className="w-full cta py-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
           Continue
         </button>
       </div>

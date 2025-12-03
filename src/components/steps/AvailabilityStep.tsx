@@ -57,6 +57,16 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   const { teamMembers, loading: membersLoading } = useTeamData();
   const { businessHours, getWorkingHoursForDate, isWorkingDay } = useBusinessHours(clientTeamFilter);
 
+  // --- COLOR UTILITY (Deterministic) ---
+  const getMemberColor = (id: string): MemberColor => {
+    // Sum char codes to create a consistent hash from the ID
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) {
+        hash += id.charCodeAt(i);
+    }
+    return MEMBER_COLORS[hash % MEMBER_COLORS.length];
+  };
+
   // 1. Filter connected members
   const connectedMembers = useMemo(() => {
     return teamMembers.filter(member => {
@@ -68,7 +78,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     });
   }, [teamMembers, clientTeamFilter]);
 
-  // 2. INITIALIZATION: Read URL params
+  // 2. INITIALIZATION
   useEffect(() => {
     if (membersLoading || connectedMembers.length === 0) return;
     if (hasInitialized.current) return;
@@ -97,7 +107,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         });
       }
     } else if (appState.requiredMembers.size === 0 && appState.optionalMembers.size === 0) {
-      // Default: Select all as required
       connectedMembers.forEach(m => newRequired.add(m.id));
     } else {
       hasInitialized.current = true;
@@ -110,13 +119,12 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     hasInitialized.current = true;
   }, [connectedMembers, membersLoading, appState.requiredMembers, appState.optionalMembers, onStateChange]);
 
-  // 3. URL SYNCHRONIZATION
+  // 3. URL SYNC
   useEffect(() => {
     if (!hasInitialized.current) return;
 
     const params = new URLSearchParams(window.location.search);
     
-    // Map IDs to Emails for clean URLs
     const reqEmails = Array.from(appState.requiredMembers)
       .map(id => connectedMembers.find(m => m.id === id)?.email)
       .filter(Boolean)
@@ -138,7 +146,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   }, [appState.requiredMembers, appState.optionalMembers, connectedMembers]);
 
-  // 4. Resolve selected members
+  // 4. SELECTED MEMBERS
   const selectedMembers = useMemo(() => {
     const requiredMembers = Array.from(appState.requiredMembers)
       .map(memberId => connectedMembers.find(m => m.id === memberId))
@@ -151,12 +159,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const allSelectedIds = new Set([...appState.requiredMembers, ...appState.optionalMembers]);
     const poolMembers = connectedMembers.filter(m => !allSelectedIds.has(m.id));
 
-    const assignColor = (memberId: string): MemberColor => {
-       const index = connectedMembers.findIndex(m => m.id === memberId);
-       return MEMBER_COLORS[Math.max(0, index) % MEMBER_COLORS.length];
-    };
-
-    const enhanceMember = (m: any) => ({ ...m, color: assignColor(m.id) });
+    const enhanceMember = (m: any) => ({ ...m, color: getMemberColor(m.id) });
 
     return { 
       required: requiredMembers.map(enhanceMember), 
@@ -247,138 +250,128 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     loadMonthlyAvailability();
   }, [currentMonth, selectedMemberEmails.all.length > 0 ? selectedMemberEmails.all.join(',') : 'empty']);
 
-  // --- HELPER: CHECK IF MEMBER IS AVAILABLE ON A DAY ---
-  const isMemberFreeOnDate = (memberEmail: string, date: Date) => {
-    const busySlots = monthlyBusySchedule[memberEmail] || [];
-    if (busySlots.length === 0) return true;
+  // --- CORE SLOT GENERATION LOGIC ---
+  // Shared logic for both Calendar (Available Date Check) and Slots List
+  const generateSlotsForDate = (date: Date): TimeSlot[] => {
+    if (!schedulingSettings) return [];
 
-    const dateStr = format(date, 'yyyy-MM-dd');
+    const duration = appState.duration || 60;
+    const slots: TimeSlot[] = [];
     
-    return !busySlots.some(slot => {
-        const start = new Date(slot.start);
-        const end = new Date(slot.end);
+    // Normalize date to 00:00:00 for working hours check
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const workingHours = getWorkingHoursForDate(startOfDay);
+    
+    if (!workingHours.start || !workingHours.end) return [];
+    
+    const [startHour, startMinute] = workingHours.start.split(':').map(Number);
+    const [endHour, endMinute] = workingHours.end.split(':').map(Number);
+    
+    const now = new Date();
+    const minDateTime = new Date(now.getTime() + schedulingSettings.min_notice_hours * 60 * 60 * 1000);
+    
+    const workingStart = new Date(startOfDay);
+    workingStart.setHours(startHour, startMinute, 0, 0);
+    
+    const workingEnd = new Date(startOfDay);
+    workingEnd.setHours(endHour, endMinute, 0, 0);
+    
+    let effectiveStart = new Date(workingStart);
+    if (startOfDay.toDateString() === now.toDateString() && effectiveStart < minDateTime) {
+      effectiveStart = new Date(minDateTime);
+    }
+    
+    let currentTime = new Date(effectiveStart);
+    
+    while (currentTime < workingEnd) {
+      const slotEnd = new Date(currentTime.getTime() + duration * 60000);
+      
+      // Strict Check: Slot must end before working day ends
+      if (slotEnd > workingEnd) break;
+
+      const requiredMembersAvailable: string[] = [];
+      let allRequiredAvailable = true;
+      
+      // CHECK REQUIRED
+      for (const email of selectedMemberEmails.required) {
+        const memberBusySlots = monthlyBusySchedule[email] || [];
+        const hasConflict = memberBusySlots.some(busySlot => {
+          const busyStart = new Date(busySlot.start);
+          const busyEnd = new Date(busySlot.end);
+          return currentTime < busyEnd && slotEnd > busyStart;
+        });
         
-        // Multi-day busy check
-        if (start < date && end > new Date(date.getTime() + 86400000)) return true;
-        
-        // Single day long block check
-        if (format(start, 'yyyy-MM-dd') === dateStr) {
-            const durationHrs = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-            if (durationHrs >= 8) return true; // Assuming 8+ hours is a full day block
+        if (!hasConflict) {
+          requiredMembersAvailable.push(email);
+        } else {
+          allRequiredAvailable = false;
         }
-        return false;
-    });
+      }
+      
+      // Only generate slot if ALL required members are free
+      if (allRequiredAvailable) {
+        // CHECK OPTIONAL
+        const optionalMembersAvailable: string[] = [];
+        for (const member of selectedMembers.optional) {
+          const memberBusySlots = monthlyBusySchedule[member.email] || [];
+          const hasConflict = memberBusySlots.some(busySlot => {
+            const busyStart = new Date(busySlot.start);
+            const busyEnd = new Date(busySlot.end);
+            return currentTime < busyEnd && slotEnd > busyStart;
+          });
+          if (!hasConflict) optionalMembersAvailable.push(member.email);
+        }
+        
+        // Attach colors to attendees for UI
+        slots.push({
+          start: currentTime.toISOString(),
+          end: slotEnd.toISOString(),
+          attendees: [
+            ...selectedMembers.required.map(m => ({ 
+              name: m.name, email: m.email, type: 'required' as const, available: true, color: m.color 
+            })),
+            ...selectedMembers.optional.map(m => ({ 
+              name: m.name, email: m.email, type: 'optional' as const, available: optionalMembersAvailable.includes(m.email), color: m.color 
+            }))
+          ]
+        });
+      }
+      currentTime = new Date(currentTime.getTime() + duration * 60000);
+    }
+    return slots;
   };
 
-  // --- AVAILABILITY CALCULATION (CRITICAL FIX) ---
+  // --- CALENDAR VISUALS ---
+  // Pre-calculate which days have at least 1 valid slot
+  const availableDateSet = useMemo(() => {
+    if (selectedMemberEmails.required.length === 0 || !schedulingSettings) return new Set<string>();
 
+    const availableDates = new Set<string>();
+    
+    calendarDays.forEach(date => {
+        // Optimization: Only check future dates within window
+        if (isSameDay(date, new Date()) || date > new Date()) {
+            const daySlots = generateSlotsForDate(date);
+            if (daySlots.length > 0) {
+                availableDates.add(format(date, 'yyyy-MM-dd'));
+            }
+        }
+    });
+    return availableDates;
+  }, [monthlyBusySchedule, calendarDays, appState.duration, selectedMemberEmails.required, schedulingSettings]);
+
+  // --- SLOTS FOR SELECTED DATE ---
   useEffect(() => {
     if (!selectedDate || Object.keys(monthlyBusySchedule).length === 0 || !schedulingSettings) {
       setAvailableSlots([]);
       return;
     }
+    const slots = generateSlotsForDate(selectedDate);
+    setAvailableSlots(slots);
+  }, [selectedDate, monthlyBusySchedule, appState.duration, selectedMemberEmails.required, schedulingSettings]);
 
-    const calculateAvailableSlots = () => {
-      const duration = appState.duration || 60;
-      const slots: TimeSlot[] = [];
-      
-      console.log('--- Calculating Slots for:', selectedDate);
-
-      // FIX: Ensure we use a clean date object for working hours check
-      // This prevents timezone shifts from the state object causing 0 hours returned
-      const cleanDate = new Date(selectedDate);
-      const workingHours = getWorkingHoursForDate(cleanDate);
-      
-      console.log('Working Hours:', workingHours);
-
-      if (!workingHours.start || !workingHours.end) {
-        setAvailableSlots([]);
-        return;
-      }
-      
-      const [startHour, startMinute] = workingHours.start.split(':').map(Number);
-      const [endHour, endMinute] = workingHours.end.split(':').map(Number);
-      
-      const now = new Date();
-      const minDateTime = new Date(now.getTime() + schedulingSettings.min_notice_hours * 60 * 60 * 1000);
-      
-      // Construct start/end in Local Browser Time (Date object behavior)
-      const workingStart = new Date(cleanDate);
-      workingStart.setHours(startHour, startMinute, 0, 0);
-      
-      const workingEnd = new Date(cleanDate);
-      workingEnd.setHours(endHour, endMinute, 0, 0);
-      
-      let effectiveStart = new Date(workingStart);
-      if (cleanDate.toDateString() === now.toDateString() && effectiveStart < minDateTime) {
-        effectiveStart = new Date(minDateTime);
-      }
-      
-      let currentTime = new Date(effectiveStart);
-      
-      while (currentTime < workingEnd) {
-        const slotEnd = new Date(currentTime.getTime() + duration * 60000);
-        
-        // If slot extends beyond working hours, skip it
-        if (slotEnd > workingEnd) break;
-
-        const requiredMembersAvailable: string[] = [];
-        let allRequiredAvailable = true;
-        
-        // Check Required
-        for (const email of selectedMemberEmails.required) {
-          const memberBusySlots = monthlyBusySchedule[email] || [];
-          const hasConflict = memberBusySlots.some(busySlot => {
-            const busyStart = new Date(busySlot.start);
-            const busyEnd = new Date(busySlot.end);
-            // Strict overlap check
-            return currentTime < busyEnd && slotEnd > busyStart;
-          });
-          
-          if (!hasConflict) {
-            requiredMembersAvailable.push(email);
-          } else {
-            allRequiredAvailable = false;
-            // console.log(`Conflict for ${email} at ${format(currentTime, 'HH:mm')}`);
-          }
-        }
-        
-        if (allRequiredAvailable) {
-          // Check Optional
-          const optionalMembersAvailable: string[] = [];
-          for (const member of selectedMembers.optional) {
-            const memberBusySlots = monthlyBusySchedule[member.email] || [];
-            const hasConflict = memberBusySlots.some(busySlot => {
-              const busyStart = new Date(busySlot.start);
-              const busyEnd = new Date(busySlot.end);
-              return currentTime < busyEnd && slotEnd > busyStart;
-            });
-            if (!hasConflict) optionalMembersAvailable.push(member.email);
-          }
-          
-          slots.push({
-            start: currentTime.toISOString(),
-            end: slotEnd.toISOString(),
-            attendees: [
-              ...selectedMembers.required.map(m => ({ 
-                name: m.name, email: m.email, type: 'required' as const, available: true, color: m.color 
-              })),
-              ...selectedMembers.optional.map(m => ({ 
-                name: m.name, email: m.email, type: 'optional' as const, available: optionalMembersAvailable.includes(m.email), color: m.color 
-              }))
-            ]
-          });
-        }
-        currentTime = new Date(currentTime.getTime() + duration * 60000);
-      }
-      
-      console.log(`Generated ${slots.length} slots`);
-      setAvailableSlots(slots);
-    };
-    calculateAvailableSlots();
-  }, [selectedDate, monthlyBusySchedule, appState.duration, appState.timezone, selectedMemberEmails.required, schedulingSettings]);
-
-  // --- DRAG HANDLERS ---
+  // --- HANDLERS ---
 
   const handleDragStart = (e: React.DragEvent, memberId: string, from: 'required' | 'optional' | 'pool') => {
     setDraggedMember({ id: memberId, from });
@@ -396,11 +389,9 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         const newRequired = new Set(appState.requiredMembers);
         const newOptional = new Set(appState.optionalMembers);
 
-        // Remove from source
         if (draggedMember.from === 'required') newRequired.delete(draggedMember.id);
         else if (draggedMember.from === 'optional') newOptional.delete(draggedMember.id);
 
-        // Add to destination
         if (to === 'required') newRequired.add(draggedMember.id);
         else if (to === 'optional') newOptional.add(draggedMember.id);
 
@@ -424,8 +415,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     if (section === 'optional') newOptional.clear();
     onStateChange({ requiredMembers: newRequired, optionalMembers: newOptional });
   };
-
-  // --- UI HANDLERS ---
 
   const handleDateSelect = (date: Date) => {
     setSelectedDate(date);
@@ -462,11 +451,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   return (
     <div className="flex flex-col h-full gap-4">
       
-      {/* 1. NEW HEADER LAYOUT */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-start gap-4 mb-2 flex-none">
+      {/* 1. HEADER GRID LAYOUT (Wider Pool) */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2 flex-none items-start">
         
-        {/* Left: Title */}
-        <div className="flex items-center gap-3 pt-1">
+        {/* Left: Title (1 Column) */}
+        <div className="col-span-1 flex items-center gap-3 pt-1">
           <Calendar className="w-6 h-6 text-e3-azure" />
           <div>
             <h2 className="text-xl font-bold text-e3-white">Select Date & Time</h2>
@@ -474,30 +463,32 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
           </div>
         </div>
 
-        {/* Right: Pool Zone (Moved Here) */}
-        {selectedMembers.pool.length > 0 && (
-            <div 
-                className="w-full md:w-auto bg-e3-space-blue/30 rounded-lg p-2.5 border border-e3-white/10 flex flex-col items-end min-w-[200px]"
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, 'pool')}
-            >
-                <div className="text-[10px] font-bold text-e3-white/40 mb-1.5 uppercase tracking-wider w-full text-left">
-                    <GripHorizontal className="inline w-3 h-3 mr-1" /> Available Team Members
+        {/* Right: Pool Zone (2 Columns - Wider) */}
+        <div className="col-span-1 md:col-span-2">
+            {selectedMembers.pool.length > 0 && (
+                <div 
+                    className="w-full bg-e3-space-blue/30 rounded-lg p-2.5 border border-e3-white/10 flex flex-col"
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, 'pool')}
+                >
+                    <div className="text-[10px] font-bold text-e3-white/40 mb-1.5 uppercase tracking-wider flex items-center">
+                        <GripHorizontal className="w-3 h-3 mr-1" /> Available Team Members
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                        {selectedMembers.pool.map(m => (
+                            <div 
+                                key={m.id}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, m.id, 'pool')}
+                                className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-medium border border-dashed border-e3-white/30 cursor-grab active:cursor-grabbing hover:bg-e3-white/10 transition-all ${m.color.text}`}
+                            >
+                                {m.name}
+                            </div>
+                        ))}
+                    </div>
                 </div>
-                <div className="flex flex-wrap gap-2 justify-start w-full">
-                    {selectedMembers.pool.map(m => (
-                        <div 
-                            key={m.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, m.id, 'pool')}
-                            className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-medium border border-dashed border-e3-white/30 text-e3-white/80 cursor-grab active:cursor-grabbing hover:bg-e3-white/10 transition-all ${m.color.text}`}
-                        >
-                            {m.name}
-                        </div>
-                    ))}
-                </div>
-            </div>
-        )}
+            )}
+        </div>
       </div>
 
       {/* 2. DRAG ZONES */}
@@ -583,7 +574,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
       {error && <div className="text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
 
-      {/* 3. MAIN CONTENT (Calendar & Slots) */}
+      {/* 3. MAIN CONTENT */}
       <div className="flex-grow min-h-0">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
           
@@ -613,6 +604,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                 const isSelected = selectedDate && isSameDay(date, selectedDate);
                 const isWorkDay = isWorkingDay(date);
                 const isPast = date < new Date() && !isSameDay(date, new Date());
+                const hasAvailability = availableDateSet.has(format(date, 'yyyy-MM-dd'));
                 
                 return (
                   <button
@@ -623,25 +615,24 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                       aspect-square rounded-md text-xs font-medium relative flex flex-col items-center justify-center gap-1 transition-all
                       ${!isCurrentMonth ? 'text-e3-white/10' 
                         : isSelected ? 'bg-e3-emerald text-e3-space-blue font-bold shadow-lg' 
-                        : isWorkDay && !isPast ? 'text-e3-white bg-e3-white/5 hover:bg-e3-white/10' 
+                        : isWorkDay && !isPast && hasAvailability ? 'text-e3-white bg-e3-white/5 hover:bg-e3-white/10' 
                         : 'text-e3-white/20 cursor-not-allowed'}
                     `}
                   >
                     <span>{format(date, 'd')}</span>
                     
-                    {!loading && isCurrentMonth && isWorkDay && !isPast && (
+                    {/* Only show dots if date is actually clickable */}
+                    {!loading && isCurrentMonth && isWorkDay && !isPast && hasAvailability && (
                         <div className="flex gap-0.5 justify-center flex-wrap px-1 max-w-full">
-                           {selectedMembers.all.map(m => {
-                               const isFree = isMemberFreeOnDate(m.email, date);
-                               if (!isFree) return null;
-                               return (
-                                   <div 
-                                     key={m.id} 
-                                     style={{ backgroundColor: m.color.hex }}
-                                     className="w-1 h-1 rounded-full" 
-                                   />
-                               )
-                           })}
+                           {/* Simply show a dot for every required/optional member if the day is generally available.
+                               Detailed availability is handled by clicking the day. */}
+                           {selectedMembers.all.map(m => (
+                               <div 
+                                 key={m.id} 
+                                 style={{ backgroundColor: m.color.hex }}
+                                 className="w-1 h-1 rounded-full" 
+                               />
+                           ))}
                         </div>
                     )}
                   </button>
@@ -743,7 +734,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         </div>
       </div>
 
-      {/* FOOTER */}
       <div className="flex flex-col sm:flex-row justify-between gap-4 mt-2 flex-none pt-4 border-t border-e3-white/10">
         <button onClick={onBack} className="order-2 sm:order-1 py-2.5 px-6 text-sm text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40">
           Back
@@ -753,7 +743,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         </button>
       </div>
       
-      {/* Mobile Sticky */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-sm border-t border-e3-white/10 sm:hidden z-50">
         <button onClick={onNext} disabled={!appState.selectedDate || !appState.selectedTime} className="w-full cta py-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
           Continue

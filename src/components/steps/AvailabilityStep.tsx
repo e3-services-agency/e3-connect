@@ -30,19 +30,20 @@ interface MemberColor {
   hex: string;
 }
 
-// EXPANDED PALETTE to prevent collisions
+// HIGH CONTRAST PALETTE (Reordered for distinction)
 const MEMBER_COLORS: MemberColor[] = [
-  { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-400', hex: '#34d399' }, // Emerald
-  { border: 'border-blue-500/40', bg: 'bg-blue-500/20', text: 'text-blue-400', hex: '#60a5fa' },       // Blue
-  { border: 'border-rose-500/40', bg: 'bg-rose-500/20', text: 'text-rose-400', hex: '#fb7185' },       // Rose
-  { border: 'border-amber-500/40', bg: 'bg-amber-500/20', text: 'text-amber-400', hex: '#fbbf24' },     // Amber
-  { border: 'border-purple-500/40', bg: 'bg-purple-500/20', text: 'text-purple-400', hex: '#c084fc' }, // Purple
-  { border: 'border-cyan-500/40', bg: 'bg-cyan-500/20', text: 'text-cyan-400', hex: '#22d3ee' },       // Cyan
-  { border: 'border-orange-500/40', bg: 'bg-orange-500/20', text: 'text-orange-400', hex: '#fb923c' }, // Orange
-  { border: 'border-lime-500/40', bg: 'bg-lime-500/20', text: 'text-lime-400', hex: '#a3e635' },       // Lime
-  { border: 'border-indigo-500/40', bg: 'bg-indigo-500/20', text: 'text-indigo-400', hex: '#818cf8' }, // Indigo
-  { border: 'border-pink-500/40', bg: 'bg-pink-500/20', text: 'text-pink-400', hex: '#f472b6' },       // Pink
-  { border: 'border-teal-500/40', bg: 'bg-teal-500/20', text: 'text-teal-400', hex: '#2dd4bf' },       // Teal
+  { border: 'border-blue-500/40', bg: 'bg-blue-500/20', text: 'text-blue-400', hex: '#60a5fa' },       // 1. Blue
+  { border: 'border-orange-500/40', bg: 'bg-orange-500/20', text: 'text-orange-400', hex: '#fb923c' }, // 2. Orange
+  { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-400', hex: '#34d399' }, // 3. Green
+  { border: 'border-purple-500/40', bg: 'bg-purple-500/20', text: 'text-purple-400', hex: '#c084fc' }, // 4. Purple
+  { border: 'border-yellow-500/40', bg: 'bg-yellow-500/20', text: 'text-yellow-400', hex: '#facc15' }, // 5. Yellow
+  { border: 'border-pink-500/40', bg: 'bg-pink-500/20', text: 'text-pink-400', hex: '#f472b6' },       // 6. Pink
+  { border: 'border-cyan-500/40', bg: 'bg-cyan-500/20', text: 'text-cyan-400', hex: '#22d3ee' },       // 7. Cyan
+  { border: 'border-rose-500/40', bg: 'bg-rose-500/20', text: 'text-rose-400', hex: '#fb7185' },       // 8. Red
+  { border: 'border-lime-500/40', bg: 'bg-lime-500/20', text: 'text-lime-400', hex: '#a3e635' },       // 9. Lime
+  { border: 'border-indigo-500/40', bg: 'bg-indigo-500/20', text: 'text-indigo-400', hex: '#818cf8' }, // 10. Indigo
+  { border: 'border-teal-500/40', bg: 'bg-teal-500/20', text: 'text-teal-400', hex: '#2dd4bf' },       // 11. Teal
+  { border: 'border-fuchsia-500/40', bg: 'bg-fuchsia-500/20', text: 'text-fuchsia-400', hex: '#e879f9' }, // 12. Fuchsia
 ];
 
 const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, onBack, onStateChange, clientTeamFilter }) => {
@@ -150,11 +151,39 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   }, [appState.requiredMembers, appState.optionalMembers, connectedMembers]);
 
-  // 4. SELECTED MEMBERS (With Stable Colors)
+  // 4. Resolve selected members (UPDATED COLOR LOGIC)
   const selectedMembers = useMemo(() => {
     const requiredMembers = Array.from(appState.requiredMembers)
       .map(memberId => connectedMembers.find(m => m.id === memberId))
       .filter(Boolean);
+    
+    const optionalMembers = Array.from(appState.optionalMembers)
+      .map(memberId => connectedMembers.find(m => m.id === memberId))
+      .filter(Boolean);
+    
+    const allSelectedIds = new Set([...appState.requiredMembers, ...appState.optionalMembers]);
+    const poolMembers = connectedMembers.filter(m => !allSelectedIds.has(m.id));
+
+    // STABLE COLOR ASSIGNMENT
+    // 1. Sort ALL connected members alphabetically by ID (or Email)
+    // 2. Assign color based on their fixed position in this list
+    const sortedAllMembers = [...connectedMembers].sort((a, b) => a.id.localeCompare(b.id));
+    
+    const assignColor = (memberId: string): MemberColor => {
+       const index = sortedAllMembers.findIndex(m => m.id === memberId);
+       // Use modulo to loop colors if > 12 members
+       return MEMBER_COLORS[Math.max(0, index) % MEMBER_COLORS.length];
+    };
+
+    const enhanceMember = (m: any) => ({ ...m, color: assignColor(m.id) });
+
+    return { 
+      required: requiredMembers.map(enhanceMember), 
+      optional: optionalMembers.map(enhanceMember),
+      pool: poolMembers.map(enhanceMember),
+      all: [...requiredMembers, ...optionalMembers].map(enhanceMember) 
+    };
+  }, [appState.requiredMembers, appState.optionalMembers, connectedMembers]);
     
     const optionalMembers = Array.from(appState.optionalMembers)
       .map(memberId => connectedMembers.find(m => m.id === memberId))

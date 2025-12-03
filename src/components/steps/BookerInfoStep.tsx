@@ -119,4 +119,4 @@ const BookerInfoStep: React.FC<StepProps> = ({ appState, onNext, onBack, onState
   );
 };
 
-export default BookerInfoStep;
+export default BookerInfoStep; 

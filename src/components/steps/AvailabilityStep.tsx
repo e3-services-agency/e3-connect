@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Calendar, Clock, Users, ChevronLeft, ChevronRight, Info, X, Trash2 } from 'lucide-react';
+import { Calendar, Clock, Users, ChevronLeft, ChevronRight, Info, X, Trash2, GripHorizontal } from 'lucide-react';
 import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
 import { useTeamData } from '../../hooks/useTeamData';
 import { supabase } from '../../integrations/supabase/client';
@@ -68,7 +68,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     });
   }, [teamMembers, clientTeamFilter]);
 
-  // 2. INITIALIZATION: Read URL params (Emails) on load
+  // 2. INITIALIZATION: Read URL params
   useEffect(() => {
     if (membersLoading || connectedMembers.length === 0) return;
     if (hasInitialized.current) return;
@@ -110,7 +110,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     hasInitialized.current = true;
   }, [connectedMembers, membersLoading, appState.requiredMembers, appState.optionalMembers, onStateChange]);
 
-  // 3. URL SYNCHRONIZATION: Update URL with Emails when selection changes
+  // 3. URL SYNCHRONIZATION
   useEffect(() => {
     if (!hasInitialized.current) return;
 
@@ -151,7 +151,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const allSelectedIds = new Set([...appState.requiredMembers, ...appState.optionalMembers]);
     const poolMembers = connectedMembers.filter(m => !allSelectedIds.has(m.id));
 
-    // Assign color based on index in full list to keep it stable
     const assignColor = (memberId: string): MemberColor => {
        const index = connectedMembers.findIndex(m => m.id === memberId);
        return MEMBER_COLORS[Math.max(0, index) % MEMBER_COLORS.length];
@@ -248,7 +247,30 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     loadMonthlyAvailability();
   }, [currentMonth, selectedMemberEmails.all.length > 0 ? selectedMemberEmails.all.join(',') : 'empty']);
 
-  // --- AVAILABILITY CALCULATION ---
+  // --- HELPER: CHECK IF MEMBER IS AVAILABLE ON A DAY ---
+  const isMemberFreeOnDate = (memberEmail: string, date: Date) => {
+    const busySlots = monthlyBusySchedule[memberEmail] || [];
+    if (busySlots.length === 0) return true;
+
+    const dateStr = format(date, 'yyyy-MM-dd');
+    
+    return !busySlots.some(slot => {
+        const start = new Date(slot.start);
+        const end = new Date(slot.end);
+        
+        // Multi-day busy check
+        if (start < date && end > new Date(date.getTime() + 86400000)) return true;
+        
+        // Single day long block check
+        if (format(start, 'yyyy-MM-dd') === dateStr) {
+            const durationHrs = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+            if (durationHrs >= 8) return true; // Assuming 8+ hours is a full day block
+        }
+        return false;
+    });
+  };
+
+  // --- AVAILABILITY CALCULATION (CRITICAL FIX) ---
 
   useEffect(() => {
     if (!selectedDate || Object.keys(monthlyBusySchedule).length === 0 || !schedulingSettings) {
@@ -259,8 +281,16 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const calculateAvailableSlots = () => {
       const duration = appState.duration || 60;
       const slots: TimeSlot[] = [];
-      const workingHours = getWorkingHoursForDate(selectedDate);
       
+      console.log('--- Calculating Slots for:', selectedDate);
+
+      // FIX: Ensure we use a clean date object for working hours check
+      // This prevents timezone shifts from the state object causing 0 hours returned
+      const cleanDate = new Date(selectedDate);
+      const workingHours = getWorkingHoursForDate(cleanDate);
+      
+      console.log('Working Hours:', workingHours);
+
       if (!workingHours.start || !workingHours.end) {
         setAvailableSlots([]);
         return;
@@ -272,14 +302,15 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       const now = new Date();
       const minDateTime = new Date(now.getTime() + schedulingSettings.min_notice_hours * 60 * 60 * 1000);
       
-      const workingStart = new Date(selectedDate);
+      // Construct start/end in Local Browser Time (Date object behavior)
+      const workingStart = new Date(cleanDate);
       workingStart.setHours(startHour, startMinute, 0, 0);
       
-      const workingEnd = new Date(selectedDate);
+      const workingEnd = new Date(cleanDate);
       workingEnd.setHours(endHour, endMinute, 0, 0);
       
       let effectiveStart = new Date(workingStart);
-      if (selectedDate.toDateString() === now.toDateString() && effectiveStart < minDateTime) {
+      if (cleanDate.toDateString() === now.toDateString() && effectiveStart < minDateTime) {
         effectiveStart = new Date(minDateTime);
       }
       
@@ -287,15 +318,20 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       
       while (currentTime < workingEnd) {
         const slotEnd = new Date(currentTime.getTime() + duration * 60000);
+        
+        // If slot extends beyond working hours, skip it
+        if (slotEnd > workingEnd) break;
+
         const requiredMembersAvailable: string[] = [];
         let allRequiredAvailable = true;
         
+        // Check Required
         for (const email of selectedMemberEmails.required) {
           const memberBusySlots = monthlyBusySchedule[email] || [];
-          
           const hasConflict = memberBusySlots.some(busySlot => {
             const busyStart = new Date(busySlot.start);
             const busyEnd = new Date(busySlot.end);
+            // Strict overlap check
             return currentTime < busyEnd && slotEnd > busyStart;
           });
           
@@ -303,10 +339,12 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             requiredMembersAvailable.push(email);
           } else {
             allRequiredAvailable = false;
+            // console.log(`Conflict for ${email} at ${format(currentTime, 'HH:mm')}`);
           }
         }
         
-        if (allRequiredAvailable && slotEnd <= workingEnd) {
+        if (allRequiredAvailable) {
+          // Check Optional
           const optionalMembersAvailable: string[] = [];
           for (const member of selectedMembers.optional) {
             const memberBusySlots = monthlyBusySchedule[member.email] || [];
@@ -333,6 +371,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         }
         currentTime = new Date(currentTime.getTime() + duration * 60000);
       }
+      
+      console.log(`Generated ${slots.length} slots`);
       setAvailableSlots(slots);
     };
     calculateAvailableSlots();
@@ -356,9 +396,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         const newRequired = new Set(appState.requiredMembers);
         const newOptional = new Set(appState.optionalMembers);
 
+        // Remove from source
         if (draggedMember.from === 'required') newRequired.delete(draggedMember.id);
         else if (draggedMember.from === 'optional') newOptional.delete(draggedMember.id);
 
+        // Add to destination
         if (to === 'required') newRequired.add(draggedMember.id);
         else if (to === 'optional') newOptional.add(draggedMember.id);
 
@@ -383,7 +425,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     onStateChange({ requiredMembers: newRequired, optionalMembers: newOptional });
   };
 
-  // --- UI HELPERS ---
+  // --- UI HANDLERS ---
 
   const handleDateSelect = (date: Date) => {
     setSelectedDate(date);
@@ -419,8 +461,12 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   return (
     <div className="flex flex-col h-full gap-4">
-      <div className="flex-none space-y-3">
-        <div className="flex items-center gap-3">
+      
+      {/* 1. NEW HEADER LAYOUT */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-start gap-4 mb-2 flex-none">
+        
+        {/* Left: Title */}
+        <div className="flex items-center gap-3 pt-1">
           <Calendar className="w-6 h-6 text-e3-azure" />
           <div>
             <h2 className="text-xl font-bold text-e3-white">Select Date & Time</h2>
@@ -428,10 +474,37 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {/* Right: Pool Zone (Moved Here) */}
+        {selectedMembers.pool.length > 0 && (
+            <div 
+                className="w-full md:w-auto bg-e3-space-blue/30 rounded-lg p-2.5 border border-e3-white/10 flex flex-col items-end min-w-[200px]"
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, 'pool')}
+            >
+                <div className="text-[10px] font-bold text-e3-white/40 mb-1.5 uppercase tracking-wider w-full text-left">
+                    <GripHorizontal className="inline w-3 h-3 mr-1" /> Available Team Members
+                </div>
+                <div className="flex flex-wrap gap-2 justify-start w-full">
+                    {selectedMembers.pool.map(m => (
+                        <div 
+                            key={m.id}
+                            draggable
+                            onDragStart={(e) => handleDragStart(e, m.id, 'pool')}
+                            className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-medium border border-dashed border-e3-white/30 text-e3-white/80 cursor-grab active:cursor-grabbing hover:bg-e3-white/10 transition-all ${m.color.text}`}
+                        >
+                            {m.name}
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
+      </div>
+
+      {/* 2. DRAG ZONES */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-none">
             {/* REQUIRED */}
             <div 
-                className={`rounded-lg p-2 border border-e3-azure/20 transition-colors ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-e3-emerald/50' : 'bg-e3-space-blue/30'}`}
+                className={`rounded-lg p-3 border border-e3-azure/20 transition-colors min-h-[80px] ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-e3-emerald/50' : 'bg-e3-space-blue/30'}`}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, 'required')}
             >
@@ -447,25 +520,30 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                         </button>
                     )}
                 </div>
-                <div className="flex flex-wrap gap-2 min-h-[30px]">
-                    {selectedMembers.required.map(m => (
-                        <div 
-                            key={m.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, m.id, 'required')}
-                            className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
-                        >
-                            {m.name}
-                            <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full"><X className="w-3 h-3 opacity-70" /></button>
+                <div className="flex flex-wrap gap-2">
+                    {selectedMembers.required.length === 0 ? (
+                        <div className="w-full h-full flex items-center justify-center text-[10px] text-e3-white/20 italic py-2">
+                            Drop required members here
                         </div>
-                    ))}
-                    {selectedMembers.required.length === 0 && <span className="text-[10px] text-e3-white/20 italic p-1">Drop members here</span>}
+                    ) : (
+                        selectedMembers.required.map(m => (
+                            <div 
+                                key={m.id}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, m.id, 'required')}
+                                className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
+                            >
+                                {m.name}
+                                <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full"><X className="w-3 h-3 opacity-70" /></button>
+                            </div>
+                        ))
+                    )}
                 </div>
             </div>
 
             {/* OPTIONAL */}
             <div 
-                className={`rounded-lg p-2 border border-e3-azure/20 transition-colors ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-blue-400/50' : 'bg-e3-space-blue/30'}`}
+                className={`rounded-lg p-3 border border-e3-azure/20 transition-colors min-h-[80px] ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-blue-400/50' : 'bg-e3-space-blue/30'}`}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, 'optional')}
             >
@@ -481,49 +559,31 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                         </button>
                     )}
                 </div>
-                <div className="flex flex-wrap gap-2 min-h-[30px]">
-                    {selectedMembers.optional.map(m => (
-                        <div 
-                            key={m.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, m.id, 'optional')}
-                            className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
-                        >
-                            {m.name}
-                            <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full"><X className="w-3 h-3 opacity-70" /></button>
-                        </div>
-                    ))}
-                    {selectedMembers.optional.length === 0 && <span className="text-[10px] text-e3-white/20 italic p-1">Drop members here</span>}
-                </div>
-            </div>
-        </div>
-
-        {/* POOL */}
-        {selectedMembers.pool.length > 0 && (
-            <div 
-                className="rounded-lg p-2 border border-e3-white/10 bg-e3-space-blue/20"
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, 'pool')}
-            >
-                <div className="text-[10px] font-bold text-e3-white/40 mb-2 uppercase tracking-wider">Available Team Members</div>
                 <div className="flex flex-wrap gap-2">
-                    {selectedMembers.pool.map(m => (
-                        <div 
-                            key={m.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, m.id, 'pool')}
-                            className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-medium border border-dashed border-e3-white/20 text-e3-white/60 cursor-grab active:cursor-grabbing hover:bg-e3-white/5 transition-all`}
-                        >
-                            {m.name}
+                    {selectedMembers.optional.length === 0 ? (
+                        <div className="w-full h-full flex items-center justify-center text-[10px] text-e3-white/20 italic py-2">
+                            Drop optional members here
                         </div>
-                    ))}
+                    ) : (
+                        selectedMembers.optional.map(m => (
+                            <div 
+                                key={m.id}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, m.id, 'optional')}
+                                className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
+                            >
+                                {m.name}
+                                <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full"><X className="w-3 h-3 opacity-70" /></button>
+                            </div>
+                        ))
+                    )}
                 </div>
             </div>
-        )}
       </div>
 
       {error && <div className="text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
 
+      {/* 3. MAIN CONTENT (Calendar & Slots) */}
       <div className="flex-grow min-h-0">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
           
@@ -572,17 +632,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                     {!loading && isCurrentMonth && isWorkDay && !isPast && (
                         <div className="flex gap-0.5 justify-center flex-wrap px-1 max-w-full">
                            {selectedMembers.all.map(m => {
-                               // Check general busy status for the day (simplified visual aid)
-                               const busySlots = monthlyBusySchedule[m.email] || [];
-                               const isGenerallyBusy = busySlots.some(s => {
-                                  const start = new Date(s.start);
-                                  const end = new Date(s.end);
-                                  // Very rough check: if they have a >12h block on this day
-                                  return isSameDay(start, date) && (end.getTime() - start.getTime()) > 12 * 3600000;
-                               });
-                               
-                               if (isGenerallyBusy) return null;
-
+                               const isFree = isMemberFreeOnDate(m.email, date);
+                               if (!isFree) return null;
                                return (
                                    <div 
                                      key={m.id} 
@@ -692,6 +743,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         </div>
       </div>
 
+      {/* FOOTER */}
       <div className="flex flex-col sm:flex-row justify-between gap-4 mt-2 flex-none pt-4 border-t border-e3-white/10">
         <button onClick={onBack} className="order-2 sm:order-1 py-2.5 px-6 text-sm text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40">
           Back
@@ -701,6 +753,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         </button>
       </div>
       
+      {/* Mobile Sticky */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-sm border-t border-e3-white/10 sm:hidden z-50">
         <button onClick={onNext} disabled={!appState.selectedDate || !appState.selectedTime} className="w-full cta py-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
           Continue

@@ -30,7 +30,7 @@ interface MemberColor {
   hex: string;
 }
 
-// HIGH CONTRAST PALETTE (Reordered for distinction)
+// HIGH CONTRAST PALETTE (Reordered for maximum distinction)
 const MEMBER_COLORS: MemberColor[] = [
   { border: 'border-blue-500/40', bg: 'bg-blue-500/20', text: 'text-blue-400', hex: '#60a5fa' },       // 1. Blue
   { border: 'border-orange-500/40', bg: 'bg-orange-500/20', text: 'text-orange-400', hex: '#fb923c' }, // 2. Orange
@@ -61,17 +61,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   const { teamMembers, loading: membersLoading } = useTeamData();
   const { businessHours, getWorkingHoursForDate, isWorkingDay } = useBusinessHours(clientTeamFilter);
 
-  // --- IMPROVED COLOR HASH (DJB2 Algorithm) ---
-  // This reduces collisions significantly compared to simple addition
-  const getMemberColor = (id: string): MemberColor => {
-    let hash = 5381;
-    for (let i = 0; i < id.length; i++) {
-        hash = ((hash << 5) + hash) + id.charCodeAt(i); // hash * 33 + c
-    }
-    // Force positive and map to array length
-    return MEMBER_COLORS[Math.abs(hash) % MEMBER_COLORS.length];
-  };
-
   // 1. Filter connected members
   const connectedMembers = useMemo(() => {
     return teamMembers.filter(member => {
@@ -83,7 +72,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     });
   }, [teamMembers, clientTeamFilter]);
 
-  // 2. INITIALIZATION
+  // 2. INITIALIZATION: Read URL params
   useEffect(() => {
     if (membersLoading || connectedMembers.length === 0) return;
     if (hasInitialized.current) return;
@@ -112,6 +101,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         });
       }
     } else if (appState.requiredMembers.size === 0 && appState.optionalMembers.size === 0) {
+      // Default: Select all as required
       connectedMembers.forEach(m => newRequired.add(m.id));
     } else {
       hasInitialized.current = true;
@@ -124,12 +114,13 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     hasInitialized.current = true;
   }, [connectedMembers, membersLoading, appState.requiredMembers, appState.optionalMembers, onStateChange]);
 
-  // 3. URL SYNC
+  // 3. URL SYNC (Adds ?step=availability)
   useEffect(() => {
     if (!hasInitialized.current) return;
 
     const params = new URLSearchParams(window.location.search);
     
+    // Map IDs to Emails for clean URLs
     const reqEmails = Array.from(appState.requiredMembers)
       .map(id => connectedMembers.find(m => m.id === id)?.email)
       .filter(Boolean)
@@ -146,12 +137,15 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     if (optEmails) params.set('optional', optEmails);
     else params.delete('optional');
 
+    // FORCE STEP PARAM
+    params.set('step', 'availability');
+
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', newUrl);
 
   }, [appState.requiredMembers, appState.optionalMembers, connectedMembers]);
 
-  // 4. Resolve selected members (UPDATED COLOR LOGIC)
+  // 4. Resolve selected members (STABLE COLORS)
   const selectedMembers = useMemo(() => {
     const requiredMembers = Array.from(appState.requiredMembers)
       .map(memberId => connectedMembers.find(m => m.id === memberId))
@@ -164,9 +158,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const allSelectedIds = new Set([...appState.requiredMembers, ...appState.optionalMembers]);
     const poolMembers = connectedMembers.filter(m => !allSelectedIds.has(m.id));
 
-    // STABLE COLOR ASSIGNMENT
-    // 1. Sort ALL connected members alphabetically by ID (or Email)
-    // 2. Assign color based on their fixed position in this list
+    // --- SORTED INDEX COLORING (No collisions) ---
+    // Sort all available members alphabetically to create a fixed order
     const sortedAllMembers = [...connectedMembers].sort((a, b) => a.id.localeCompare(b.id));
     
     const assignColor = (memberId: string): MemberColor => {
@@ -176,24 +169,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     };
 
     const enhanceMember = (m: any) => ({ ...m, color: assignColor(m.id) });
-
-    return { 
-      required: requiredMembers.map(enhanceMember), 
-      optional: optionalMembers.map(enhanceMember),
-      pool: poolMembers.map(enhanceMember),
-      all: [...requiredMembers, ...optionalMembers].map(enhanceMember) 
-    };
-  }, [appState.requiredMembers, appState.optionalMembers, connectedMembers]);
-    
-    const optionalMembers = Array.from(appState.optionalMembers)
-      .map(memberId => connectedMembers.find(m => m.id === memberId))
-      .filter(Boolean);
-    
-    const allSelectedIds = new Set([...appState.requiredMembers, ...appState.optionalMembers]);
-    const poolMembers = connectedMembers.filter(m => !allSelectedIds.has(m.id));
-
-    // Assign color using the improved hash
-    const enhanceMember = (m: any) => ({ ...m, color: getMemberColor(m.id) });
 
     return { 
       required: requiredMembers.map(enhanceMember), 
@@ -284,57 +259,33 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     loadMonthlyAvailability();
   }, [currentMonth, selectedMemberEmails.all.length > 0 ? selectedMemberEmails.all.join(',') : 'empty']);
 
-  // --- CALENDAR DOT LOGIC ---
-  // Calculates which members should show a dot on the calendar
-  const calendarDailyAvailability = useMemo(() => {
-    const map = new Map<string, Set<string>>(); // DateStr -> Set<MemberEmail>
+  // --- HELPER: CHECK IF MEMBER IS AVAILABLE ON A DAY ---
+  const isMemberFreeOnDate = (memberEmail: string, date: Date) => {
+    const busySlots = monthlyBusySchedule[memberEmail] || [];
+    if (busySlots.length === 0) return true;
 
-    calendarDays.forEach(date => {
-        const dateStr = format(date, 'yyyy-MM-dd');
-        const availableMembers = new Set<string>();
+    const dateStr = format(date, 'yyyy-MM-dd');
+    
+    // Check strict business hours overlap
+    const workingHours = getWorkingHoursForDate(date);
+    if (!workingHours.start || !workingHours.end) return false;
 
-        // 1. Basic Working Day Check
-        if (!isWorkingDay(date)) return;
+    const [sh, sm] = workingHours.start.split(':').map(Number);
+    const [eh, em] = workingHours.end.split(':').map(Number);
+    const workStart = new Date(date); workStart.setHours(sh, sm, 0, 0);
+    const workEnd = new Date(date); workEnd.setHours(eh, em, 0, 0);
 
-        const workingHours = getWorkingHoursForDate(date);
-        if (!workingHours.start || !workingHours.end) return;
-
-        const [sh, sm] = workingHours.start.split(':').map(Number);
-        const [eh, em] = workingHours.end.split(':').map(Number);
+    return !busySlots.some(slot => {
+        const start = new Date(slot.start);
+        const end = new Date(slot.end);
         
-        // Define the "Business Day" boundaries for this specific date
-        const businessDayStart = new Date(date); businessDayStart.setHours(sh, sm, 0, 0);
-        const businessDayEnd = new Date(date); businessDayEnd.setHours(eh, em, 0, 0);
-
-        selectedMembers.all.forEach(member => {
-            const busySlots = monthlyBusySchedule[member.email] || [];
-            
-            // If they have no busy slots at all, they are free
-            if (busySlots.length === 0) {
-                availableMembers.add(member.email);
-                return;
-            }
-
-            // Check if they are blocked for the WHOLE business day
-            // We assume they are available unless we find a slot that covers Start->End
-            const isFullyBlocked = busySlots.some(slot => {
-                const s = new Date(slot.start);
-                const e = new Date(slot.end);
-                // If a single slot starts before work and ends after work, they are unavailable
-                return s <= businessDayStart && e >= businessDayEnd;
-            });
-
-            if (!isFullyBlocked) {
-                availableMembers.add(member.email);
-            }
-        });
-        map.set(dateStr, availableMembers);
+        // If slot completely covers working hours = BUSY
+        return start <= workStart && end >= workEnd;
     });
-    return map;
-  }, [monthlyBusySchedule, calendarDays, selectedMembers.all]);
+  };
 
+  // --- AVAILABILITY CALCULATION ---
 
-  // --- TIME SLOT LOGIC ---
   useEffect(() => {
     if (!selectedDate || Object.keys(monthlyBusySchedule).length === 0 || !schedulingSettings) {
       setAvailableSlots([]);
@@ -344,6 +295,9 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const calculateAvailableSlots = () => {
       const duration = appState.duration || 60;
       const slots: TimeSlot[] = [];
+      
+      console.log('--- Calculating Slots for:', selectedDate);
+
       const cleanDate = new Date(selectedDate);
       const workingHours = getWorkingHoursForDate(cleanDate);
       
@@ -417,6 +371,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         }
         currentTime = new Date(currentTime.getTime() + duration * 60000);
       }
+      
+      console.log(`Generated ${slots.length} slots`);
       setAvailableSlots(slots);
     };
     calculateAvailableSlots();
@@ -502,7 +458,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   return (
     <div className="flex flex-col h-full gap-4">
       
-      {/* 1. HEADER GRID LAYOUT (Wider Pool) */}
+      {/* 1. HEADER GRID LAYOUT */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2 flex-none items-start">
         
         {/* Left: Title (1 Column) */}
@@ -656,10 +612,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                 const isWorkDay = isWorkingDay(date);
                 const isPast = date < new Date() && !isSameDay(date, new Date());
                 
-                // Get available members for this specific day using the map
-                const dateStr = format(date, 'yyyy-MM-dd');
-                const freeMembersForDay = calendarDailyAvailability.get(dateStr) || new Set();
-
                 return (
                   <button
                     key={index}
@@ -678,9 +630,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                     {!loading && isCurrentMonth && isWorkDay && !isPast && (
                         <div className="flex gap-0.5 justify-center flex-wrap px-1 max-w-full">
                            {selectedMembers.all.map(m => {
-                               // Only render dot if they are in the "Free Set" for this day
-                               if (!freeMembersForDay.has(m.email)) return null;
-                               
+                               const isFree = isMemberFreeOnDate(m.email, date);
+                               if (!isFree) return null;
                                return (
                                    <div 
                                      key={m.id} 

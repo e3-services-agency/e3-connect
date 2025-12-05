@@ -30,20 +30,20 @@ interface MemberColor {
   hex: string;
 }
 
-// HIGH CONTRAST PALETTE (Sorted by distinctness)
+// HIGH CONTRAST PALETTE
 const MEMBER_COLORS: MemberColor[] = [
-  { border: 'border-blue-500/40', bg: 'bg-blue-500/20', text: 'text-blue-400', hex: '#60a5fa' },       // 1. Blue
-  { border: 'border-orange-500/40', bg: 'bg-orange-500/20', text: 'text-orange-400', hex: '#fb923c' }, // 2. Orange
-  { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-400', hex: '#34d399' }, // 3. Green
-  { border: 'border-purple-500/40', bg: 'bg-purple-500/20', text: 'text-purple-400', hex: '#c084fc' }, // 4. Purple
-  { border: 'border-yellow-500/40', bg: 'bg-yellow-500/20', text: 'text-yellow-400', hex: '#facc15' }, // 5. Yellow
-  { border: 'border-pink-500/40', bg: 'bg-pink-500/20', text: 'text-pink-400', hex: '#f472b6' },       // 6. Pink
-  { border: 'border-cyan-500/40', bg: 'bg-cyan-500/20', text: 'text-cyan-400', hex: '#22d3ee' },       // 7. Cyan
-  { border: 'border-rose-500/40', bg: 'bg-rose-500/20', text: 'text-rose-400', hex: '#fb7185' },       // 8. Red
-  { border: 'border-lime-500/40', bg: 'bg-lime-500/20', text: 'text-lime-400', hex: '#a3e635' },       // 9. Lime
-  { border: 'border-indigo-500/40', bg: 'bg-indigo-500/20', text: 'text-indigo-400', hex: '#818cf8' }, // 10. Indigo
-  { border: 'border-teal-500/40', bg: 'bg-teal-500/20', text: 'text-teal-400', hex: '#2dd4bf' },       // 11. Teal
-  { border: 'border-fuchsia-500/40', bg: 'bg-fuchsia-500/20', text: 'text-fuchsia-400', hex: '#e879f9' }, // 12. Fuchsia
+  { border: 'border-blue-500/40', bg: 'bg-blue-500/20', text: 'text-blue-400', hex: '#60a5fa' },
+  { border: 'border-orange-500/40', bg: 'bg-orange-500/20', text: 'text-orange-400', hex: '#fb923c' },
+  { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-400', hex: '#34d399' },
+  { border: 'border-purple-500/40', bg: 'bg-purple-500/20', text: 'text-purple-400', hex: '#c084fc' },
+  { border: 'border-yellow-500/40', bg: 'bg-yellow-500/20', text: 'text-yellow-400', hex: '#facc15' },
+  { border: 'border-pink-500/40', bg: 'bg-pink-500/20', text: 'text-pink-400', hex: '#f472b6' },
+  { border: 'border-cyan-500/40', bg: 'bg-cyan-500/20', text: 'text-cyan-400', hex: '#22d3ee' },
+  { border: 'border-rose-500/40', bg: 'bg-rose-500/20', text: 'text-rose-400', hex: '#fb7185' },
+  { border: 'border-lime-500/40', bg: 'bg-lime-500/20', text: 'text-lime-400', hex: '#a3e635' },
+  { border: 'border-indigo-500/40', bg: 'bg-indigo-500/20', text: 'text-indigo-400', hex: '#818cf8' },
+  { border: 'border-teal-500/40', bg: 'bg-teal-500/20', text: 'text-teal-400', hex: '#2dd4bf' },
+  { border: 'border-fuchsia-500/40', bg: 'bg-fuchsia-500/20', text: 'text-fuchsia-400', hex: '#e879f9' },
 ];
 
 const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, onBack, onStateChange, clientTeamFilter }) => {
@@ -61,20 +61,12 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   const { teamMembers, loading: membersLoading } = useTeamData();
   const { businessHours, getWorkingHoursForDate, isWorkingDay } = useBusinessHours(clientTeamFilter);
 
-  // --- COLOR UTILITY ---
-  const getMemberColor = (id: string): MemberColor => {
-    let hash = 5381;
-    for (let i = 0; i < id.length; i++) {
-        hash = ((hash << 5) + hash) + id.charCodeAt(i);
-    }
-    return MEMBER_COLORS[Math.abs(hash) % MEMBER_COLORS.length];
-  };
-
   // 1. ROBUST MEMBER FILTERING
   const connectedMembers = useMemo(() => {
     let activeFilter = clientTeamFilter;
     
     if (!activeFilter) {
+        // Fallback: Parse URL manually
         const pathParts = window.location.pathname.split('/');
         const bookIndex = pathParts.indexOf('book');
         if (bookIndex !== -1 && pathParts[bookIndex + 1]) {
@@ -84,7 +76,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
     return teamMembers.filter(member => {
       const hasCalendar = member.googleCalendarConnected || member.email;
-      
       let matchesClient = true;
       if (activeFilter) {
           matchesClient = member.clientTeams.some(team => {
@@ -95,12 +86,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                      normalizedName === activeFilter;
           });
       }
-
       return hasCalendar && matchesClient;
     });
   }, [teamMembers, clientTeamFilter]);
 
-  // 2. INITIALIZATION (URL Params)
+  // 2. INITIALIZATION
   useEffect(() => {
     if (membersLoading || connectedMembers.length === 0) return;
     if (hasInitialized.current) return;
@@ -146,7 +136,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     if (!hasInitialized.current) return;
 
     const params = new URLSearchParams(window.location.search);
-    
     const reqEmails = Array.from(appState.requiredMembers)
       .map(id => connectedMembers.find(m => m.id === id)?.email)
       .filter(Boolean)
@@ -183,6 +172,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const allSelectedIds = new Set([...appState.requiredMembers, ...appState.optionalMembers]);
     const poolMembers = connectedMembers.filter(m => !allSelectedIds.has(m.id));
 
+    // Sort to ensure consistent colors
     const sortedAllMembers = [...connectedMembers].sort((a, b) => a.name.localeCompare(b.name));
     
     const assignColor = (memberId: string): MemberColor => {
@@ -214,7 +204,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   }, [currentMonth]);
 
   // --- DATA LOADING ---
-  
   useEffect(() => {
     const loadSchedulingSettings = async () => {
       try {
@@ -478,11 +467,16 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   if (membersLoading) return <div className="text-center py-12 text-e3-white/60">Loading team...</div>;
   if (connectedMembers.length === 0) return <div className="text-center py-12 text-e3-white/60">No connected team members found.</div>;
 
+  // DYNAMIC GRID LAYOUT
+  const gridCols = (appState.duration || 60) <= 30 ? 'grid-cols-3' : 'grid-cols-2';
+
   return (
     <div className="flex flex-col h-full gap-4">
-      {/* 1. HEADER GRID */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2 flex-none items-start">
-        <div className="col-span-1 flex items-center gap-3 pt-1">
+      {/* 1. FLEX HEADER - Widened Pool */}
+      <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-2 flex-none">
+        
+        {/* Left: Title */}
+        <div className="flex-none flex items-center gap-3 pt-1 min-w-[200px]">
           <Calendar className="w-6 h-6 text-e3-azure" />
           <div>
             <h2 className="text-xl font-bold text-e3-white">Select Date & Time</h2>
@@ -490,8 +484,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
           </div>
         </div>
 
-        {/* POOL */}
-        <div className="col-span-1 md:col-span-2">
+        {/* Right: Pool Zone (Fills remaining space) */}
+        <div className="flex-grow min-w-0 w-full md:w-auto">
             {selectedMembers.pool.length > 0 && (
                 <div 
                     className="w-full bg-e3-space-blue/30 rounded-lg p-2.5 border border-e3-white/10 flex flex-col"
@@ -525,7 +519,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                                     {m.name.charAt(0)}
                                   </div>
                                 )}
-                                {/* Fallback if image fails but exists */}
                                 {m.google_photo_url && (
                                   <div className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[8px] hidden">
                                     {m.name.charAt(0)}
@@ -589,7 +582,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                                     {m.name.charAt(0)}
                                   </div>
                                 )}
-                                {/* Fallback if image fails but exists */}
                                 {m.google_photo_url && (
                                   <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px] hidden">
                                     {m.name.charAt(0)}
@@ -650,7 +642,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                                     {m.name.charAt(0)}
                                   </div>
                                 )}
-                                {/* Fallback if image fails but exists */}
                                 {m.google_photo_url && (
                                   <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px] hidden">
                                     {m.name.charAt(0)}
@@ -669,6 +660,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
       <div className="flex-grow min-h-0">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
+          {/* CALENDAR */}
           <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
             <div className="flex items-center justify-between mb-4 flex-none">
               <h3 className="font-semibold text-e3-white text-sm">{format(currentMonth, 'MMMM yyyy')}</h3>
@@ -694,6 +686,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                 const isSelected = selectedDate && isSameDay(date, selectedDate);
                 const isWorkDay = isWorkingDay(date);
                 const isPast = date < new Date() && !isSameDay(date, new Date());
+                
+                // Get pre-calculated available members for this day
                 const dateStr = format(date, 'yyyy-MM-dd');
                 const freeMembersForDay = dailyAvailabilityMap.get(dateStr) || new Set();
                 const hasAvailability = freeMembersForDay.size > 0;
@@ -733,6 +727,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             </div>
           </div>
 
+          {/* SLOTS - COMPACT & NO SCROLLBAR */}
           <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
             <div className="flex flex-col gap-3 mb-4 flex-none border-b border-e3-white/5 pb-3">
               <div className="flex items-center justify-between">
@@ -774,8 +769,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                     <p className="text-[10px] opacity-70 mt-1">Try removing required members.</p>
                   </div>
                ) : (
-                  <div className="absolute inset-0 overflow-y-auto custom-scrollbar pr-2 space-y-2">
-                    <div className="grid grid-cols-2 gap-2 pb-2">
+                  <div className="absolute inset-0 overflow-y-auto pr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+                    <div className={`grid ${gridCols} gap-2 pb-2`}>
                       {availableSlots.map((slot, index) => {
                         const isSelected = appState.selectedTime === slot.start;
                          return (
@@ -783,7 +778,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                              key={index}
                              onClick={() => handleTimeSelect(slot)}
                              className={`
-                               py-2 px-3 rounded text-xs font-medium border transition-all flex flex-col items-start gap-1.5
+                               py-2 px-2 rounded-md text-xs font-medium border transition-all flex flex-col items-start gap-1
                                ${isSelected 
                                  ? 'bg-e3-emerald text-e3-space-blue border-e3-emerald shadow-md' 
                                  : 'bg-e3-space-blue/40 border-e3-white/10 text-e3-white hover:border-e3-emerald/50 hover:bg-e3-white/5'}
@@ -791,7 +786,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                            >
                              <div className="flex justify-between w-full items-center">
                                 <span>{formatTimeSlot(new Date(slot.start))}</span>
-                                {isSelected && <div className="w-1.5 h-1.5 bg-e3-space-blue rounded-full" />}
+                                {isSelected && <div className="w-1 h-1 bg-e3-space-blue rounded-full" />}
                              </div>
                              
                              <div className="flex flex-wrap gap-1">

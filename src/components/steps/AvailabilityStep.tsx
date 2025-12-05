@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Calendar, Clock, Users, ChevronLeft, ChevronRight, Info, X, Trash2, GripHorizontal } from 'lucide-react';
 import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
 import { useTeamData } from '../../hooks/useTeamData';
@@ -30,7 +30,7 @@ interface MemberColor {
   hex: string;
 }
 
-// HIGH CONTRAST PALETTE (Reordered for maximum distinction)
+// HIGH CONTRAST PALETTE (Sorted by distinctness)
 const MEMBER_COLORS: MemberColor[] = [
   { border: 'border-blue-500/40', bg: 'bg-blue-500/20', text: 'text-blue-400', hex: '#60a5fa' },       // 1. Blue
   { border: 'border-orange-500/40', bg: 'bg-orange-500/20', text: 'text-orange-400', hex: '#fb923c' }, // 2. Orange
@@ -61,18 +61,46 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   const { teamMembers, loading: membersLoading } = useTeamData();
   const { businessHours, getWorkingHoursForDate, isWorkingDay } = useBusinessHours(clientTeamFilter);
 
-  // 1. Filter connected members
+  // --- COLOR UTILITY ---
+  const getMemberColor = (id: string): MemberColor => {
+    let hash = 5381;
+    for (let i = 0; i < id.length; i++) {
+        hash = ((hash << 5) + hash) + id.charCodeAt(i);
+    }
+    return MEMBER_COLORS[Math.abs(hash) % MEMBER_COLORS.length];
+  };
+
+  // 1. ROBUST MEMBER FILTERING
   const connectedMembers = useMemo(() => {
+    let activeFilter = clientTeamFilter;
+    
+    if (!activeFilter) {
+        const pathParts = window.location.pathname.split('/');
+        const bookIndex = pathParts.indexOf('book');
+        if (bookIndex !== -1 && pathParts[bookIndex + 1]) {
+            activeFilter = pathParts[bookIndex + 1];
+        }
+    }
+
     return teamMembers.filter(member => {
       const hasCalendar = member.googleCalendarConnected || member.email;
-      const matchesClient = clientTeamFilter 
-        ? member.clientTeams.some(team => team.id === clientTeamFilter)
-        : true;
+      
+      let matchesClient = true;
+      if (activeFilter) {
+          matchesClient = member.clientTeams.some(team => {
+              const normalizedName = team.name.toLowerCase().replace(/ /g, '-');
+              const normalizedSlug = (team as any).slug?.toLowerCase(); 
+              return team.id === activeFilter || 
+                     normalizedSlug === activeFilter || 
+                     normalizedName === activeFilter;
+          });
+      }
+
       return hasCalendar && matchesClient;
     });
   }, [teamMembers, clientTeamFilter]);
 
-  // 2. INITIALIZATION: Read URL params
+  // 2. INITIALIZATION (URL Params)
   useEffect(() => {
     if (membersLoading || connectedMembers.length === 0) return;
     if (hasInitialized.current) return;
@@ -101,7 +129,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         });
       }
     } else if (appState.requiredMembers.size === 0 && appState.optionalMembers.size === 0) {
-      // Default: Select all as required
       connectedMembers.forEach(m => newRequired.add(m.id));
     } else {
       hasInitialized.current = true;
@@ -114,13 +141,12 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     hasInitialized.current = true;
   }, [connectedMembers, membersLoading, appState.requiredMembers, appState.optionalMembers, onStateChange]);
 
-  // 3. URL SYNC (Adds ?step=availability)
+  // 3. URL SYNC
   useEffect(() => {
     if (!hasInitialized.current) return;
 
     const params = new URLSearchParams(window.location.search);
     
-    // Map IDs to Emails for clean URLs
     const reqEmails = Array.from(appState.requiredMembers)
       .map(id => connectedMembers.find(m => m.id === id)?.email)
       .filter(Boolean)
@@ -137,7 +163,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     if (optEmails) params.set('optional', optEmails);
     else params.delete('optional');
 
-    // FORCE STEP PARAM
     params.set('step', 'availability');
 
     const newUrl = `${window.location.pathname}?${params.toString()}`;
@@ -145,7 +170,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   }, [appState.requiredMembers, appState.optionalMembers, connectedMembers]);
 
-  // 4. Resolve selected members (STABLE COLORS)
+  // 4. SELECTED MEMBERS
   const selectedMembers = useMemo(() => {
     const requiredMembers = Array.from(appState.requiredMembers)
       .map(memberId => connectedMembers.find(m => m.id === memberId))
@@ -158,13 +183,10 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const allSelectedIds = new Set([...appState.requiredMembers, ...appState.optionalMembers]);
     const poolMembers = connectedMembers.filter(m => !allSelectedIds.has(m.id));
 
-    // --- SORTED INDEX COLORING (No collisions) ---
-    // Sort all available members alphabetically to create a fixed order
-    const sortedAllMembers = [...connectedMembers].sort((a, b) => a.id.localeCompare(b.id));
+    const sortedAllMembers = [...connectedMembers].sort((a, b) => a.name.localeCompare(b.name));
     
     const assignColor = (memberId: string): MemberColor => {
        const index = sortedAllMembers.findIndex(m => m.id === memberId);
-       // Use modulo to loop colors if > 12 members
        return MEMBER_COLORS[Math.max(0, index) % MEMBER_COLORS.length];
     };
 
@@ -259,126 +281,127 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     loadMonthlyAvailability();
   }, [currentMonth, selectedMemberEmails.all.length > 0 ? selectedMemberEmails.all.join(',') : 'empty']);
 
-  // --- HELPER: CHECK IF MEMBER IS AVAILABLE ON A DAY ---
-  const isMemberFreeOnDate = (memberEmail: string, date: Date) => {
-    const busySlots = monthlyBusySchedule[memberEmail] || [];
-    if (busySlots.length === 0) return true;
+  // --- STRICT SLOT GENERATOR ---
+  const generateSlotsForDate = useCallback((date: Date): TimeSlot[] => {
+    if (!schedulingSettings) return [];
 
-    const dateStr = format(date, 'yyyy-MM-dd');
+    const duration = appState.duration || 60;
+    const slots: TimeSlot[] = [];
     
-    // Check strict business hours overlap
-    const workingHours = getWorkingHoursForDate(date);
-    if (!workingHours.start || !workingHours.end) return false;
-
-    const [sh, sm] = workingHours.start.split(':').map(Number);
-    const [eh, em] = workingHours.end.split(':').map(Number);
-    const workStart = new Date(date); workStart.setHours(sh, sm, 0, 0);
-    const workEnd = new Date(date); workEnd.setHours(eh, em, 0, 0);
-
-    return !busySlots.some(slot => {
-        const start = new Date(slot.start);
-        const end = new Date(slot.end);
-        
-        // If slot completely covers working hours = BUSY
-        return start <= workStart && end >= workEnd;
-    });
-  };
-
-  // --- AVAILABILITY CALCULATION ---
-
-  useEffect(() => {
-    if (!selectedDate || Object.keys(monthlyBusySchedule).length === 0 || !schedulingSettings) {
-      setAvailableSlots([]);
-      return;
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    const workingHours = getWorkingHoursForDate(startOfDay);
+    
+    if (!workingHours.start || !workingHours.end) return [];
+    
+    const [startHour, startMinute] = workingHours.start.split(':').map(Number);
+    const [endHour, endMinute] = workingHours.end.split(':').map(Number);
+    
+    const now = new Date();
+    const minDateTime = new Date(now.getTime() + schedulingSettings.min_notice_hours * 60 * 60 * 1000);
+    
+    const workingStart = new Date(startOfDay);
+    workingStart.setHours(startHour, startMinute, 0, 0);
+    
+    const workingEnd = new Date(startOfDay);
+    workingEnd.setHours(endHour, endMinute, 0, 0);
+    
+    let effectiveStart = new Date(workingStart);
+    if (startOfDay.toDateString() === now.toDateString() && effectiveStart < minDateTime) {
+      effectiveStart = new Date(minDateTime);
     }
+    
+    let currentTime = new Date(effectiveStart);
+    
+    while (currentTime < workingEnd) {
+      const slotEnd = new Date(currentTime.getTime() + duration * 60000);
+      if (slotEnd > workingEnd) break;
 
-    const calculateAvailableSlots = () => {
-      const duration = appState.duration || 60;
-      const slots: TimeSlot[] = [];
+      const requiredMembersAvailable: string[] = [];
+      let allRequiredAvailable = true;
       
-      console.log('--- Calculating Slots for:', selectedDate);
-
-      const cleanDate = new Date(selectedDate);
-      const workingHours = getWorkingHoursForDate(cleanDate);
-      
-      if (!workingHours.start || !workingHours.end) {
-        setAvailableSlots([]);
-        return;
-      }
-      
-      const [startHour, startMinute] = workingHours.start.split(':').map(Number);
-      const [endHour, endMinute] = workingHours.end.split(':').map(Number);
-      
-      const now = new Date();
-      const minDateTime = new Date(now.getTime() + schedulingSettings.min_notice_hours * 60 * 60 * 1000);
-      
-      const workingStart = new Date(cleanDate);
-      workingStart.setHours(startHour, startMinute, 0, 0);
-      
-      const workingEnd = new Date(cleanDate);
-      workingEnd.setHours(endHour, endMinute, 0, 0);
-      
-      let effectiveStart = new Date(workingStart);
-      if (cleanDate.toDateString() === now.toDateString() && effectiveStart < minDateTime) {
-        effectiveStart = new Date(minDateTime);
-      }
-      
-      let currentTime = new Date(effectiveStart);
-      
-      while (currentTime < workingEnd) {
-        const slotEnd = new Date(currentTime.getTime() + duration * 60000);
-        if (slotEnd > workingEnd) break;
-
-        const requiredMembersAvailable: string[] = [];
-        let allRequiredAvailable = true;
+      // Check Required
+      for (const email of selectedMemberEmails.required) {
+        const memberBusySlots = monthlyBusySchedule[email] || [];
+        const hasConflict = memberBusySlots.some(busySlot => {
+          const busyStart = new Date(busySlot.start);
+          const busyEnd = new Date(busySlot.end);
+          return currentTime < busyEnd && slotEnd > busyStart;
+        });
         
-        for (const email of selectedMemberEmails.required) {
-          const memberBusySlots = monthlyBusySchedule[email] || [];
+        if (!hasConflict) {
+          requiredMembersAvailable.push(email);
+        } else {
+          allRequiredAvailable = false;
+        }
+      }
+      
+      if (allRequiredAvailable) {
+        // Check Optional
+        const optionalMembersAvailable: string[] = [];
+        for (const member of selectedMembers.optional) {
+          const memberBusySlots = monthlyBusySchedule[member.email] || [];
           const hasConflict = memberBusySlots.some(busySlot => {
             const busyStart = new Date(busySlot.start);
             const busyEnd = new Date(busySlot.end);
             return currentTime < busyEnd && slotEnd > busyStart;
           });
-          
-          if (!hasConflict) requiredMembersAvailable.push(email);
-          else allRequiredAvailable = false;
+          if (!hasConflict) optionalMembersAvailable.push(member.email);
         }
         
-        if (allRequiredAvailable) {
-          const optionalMembersAvailable: string[] = [];
-          for (const member of selectedMembers.optional) {
-            const memberBusySlots = monthlyBusySchedule[member.email] || [];
-            const hasConflict = memberBusySlots.some(busySlot => {
-              const busyStart = new Date(busySlot.start);
-              const busyEnd = new Date(busySlot.end);
-              return currentTime < busyEnd && slotEnd > busyStart;
-            });
-            if (!hasConflict) optionalMembersAvailable.push(member.email);
-          }
-          
-          slots.push({
-            start: currentTime.toISOString(),
-            end: slotEnd.toISOString(),
-            attendees: [
-              ...selectedMembers.required.map(m => ({ 
-                name: m.name, email: m.email, type: 'required' as const, available: true, color: m.color 
-              })),
-              ...selectedMembers.optional.map(m => ({ 
-                name: m.name, email: m.email, type: 'optional' as const, available: optionalMembersAvailable.includes(m.email), color: m.color 
-              }))
-            ]
-          });
-        }
-        currentTime = new Date(currentTime.getTime() + duration * 60000);
+        slots.push({
+          start: currentTime.toISOString(),
+          end: slotEnd.toISOString(),
+          attendees: [
+            ...selectedMembers.required.map(m => ({ 
+              name: m.name, email: m.email, type: 'required' as const, available: true, color: m.color 
+            })),
+            ...selectedMembers.optional.map(m => ({ 
+              name: m.name, email: m.email, type: 'optional' as const, available: optionalMembersAvailable.includes(m.email), color: m.color 
+            }))
+          ]
+        });
       }
-      
-      console.log(`Generated ${slots.length} slots`);
-      setAvailableSlots(slots);
-    };
-    calculateAvailableSlots();
-  }, [selectedDate, monthlyBusySchedule, appState.duration, appState.timezone, selectedMemberEmails.required, schedulingSettings]);
+      currentTime = new Date(currentTime.getTime() + duration * 60000);
+    }
+    return slots;
+  }, [schedulingSettings, appState.duration, selectedMemberEmails.required, monthlyBusySchedule, getWorkingHoursForDate, selectedMembers]);
 
-  // --- DRAG HANDLERS ---
+  // --- CALENDAR DOTS ---
+  const dailyAvailabilityMap = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    if (selectedMemberEmails.required.length === 0 || !schedulingSettings) return map;
+
+    calendarDays.forEach(date => {
+        if (isSameDay(date, new Date()) || date > new Date()) {
+            const slots = generateSlotsForDate(date);
+            const availableSet = new Set<string>();
+            
+            slots.forEach(slot => {
+                slot.attendees?.forEach(att => {
+                    if (att.available) availableSet.add(att.email);
+                });
+            });
+            
+            if (availableSet.size > 0) {
+                map.set(format(date, 'yyyy-MM-dd'), availableSet);
+            }
+        }
+    });
+    return map;
+  }, [calendarDays, generateSlotsForDate, selectedMemberEmails.required, schedulingSettings]);
+
+  // --- SLOTS FOR SELECTED DATE ---
+  useEffect(() => {
+    if (!selectedDate || Object.keys(monthlyBusySchedule).length === 0) {
+      setAvailableSlots([]);
+      return;
+    }
+    const slots = generateSlotsForDate(selectedDate);
+    setAvailableSlots(slots);
+  }, [selectedDate, generateSlotsForDate]);
+
+  // --- HANDLERS ---
 
   const handleDragStart = (e: React.DragEvent, memberId: string, from: 'required' | 'optional' | 'pool') => {
     setDraggedMember({ id: memberId, from });
@@ -457,11 +480,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   return (
     <div className="flex flex-col h-full gap-4">
-      
-      {/* 1. HEADER GRID LAYOUT */}
+      {/* 1. HEADER GRID */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-2 flex-none items-start">
-        
-        {/* Left: Title (1 Column) */}
         <div className="col-span-1 flex items-center gap-3 pt-1">
           <Calendar className="w-6 h-6 text-e3-azure" />
           <div>
@@ -470,7 +490,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
           </div>
         </div>
 
-        {/* Right: Pool Zone (2 Columns - Wider) */}
+        {/* POOL */}
         <div className="col-span-1 md:col-span-2">
             {selectedMembers.pool.length > 0 && (
                 <div 
@@ -489,6 +509,28 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                                 onDragStart={(e) => handleDragStart(e, m.id, 'pool')}
                                 className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-medium border border-dashed border-e3-white/30 cursor-grab active:cursor-grabbing hover:bg-e3-white/10 transition-all ${m.color.text}`}
                             >
+                                {m.google_photo_url ? (
+                                  <img 
+                                    src={m.google_photo_url} 
+                                    alt={m.name} 
+                                    className="w-4 h-4 rounded-full object-cover"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none';
+                                      const next = e.currentTarget.nextElementSibling as HTMLElement;
+                                      if (next) next.style.display = 'flex';
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[8px]">
+                                    {m.name.charAt(0)}
+                                  </div>
+                                )}
+                                {/* Fallback if image fails but exists */}
+                                {m.google_photo_url && (
+                                  <div className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[8px] hidden">
+                                    {m.name.charAt(0)}
+                                  </div>
+                                )}
                                 {m.name}
                             </div>
                         ))}
@@ -531,6 +573,28 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                                 onDragStart={(e) => handleDragStart(e, m.id, 'required')}
                                 className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
                             >
+                                {m.google_photo_url ? (
+                                  <img 
+                                    src={m.google_photo_url} 
+                                    alt={m.name} 
+                                    className="w-4 h-4 rounded-full object-cover"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none';
+                                      const next = e.currentTarget.nextElementSibling as HTMLElement;
+                                      if (next) next.style.display = 'flex';
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px]">
+                                    {m.name.charAt(0)}
+                                  </div>
+                                )}
+                                {/* Fallback if image fails but exists */}
+                                {m.google_photo_url && (
+                                  <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px] hidden">
+                                    {m.name.charAt(0)}
+                                  </div>
+                                )}
                                 {m.name}
                                 <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full"><X className="w-3 h-3 opacity-70" /></button>
                             </div>
@@ -570,6 +634,28 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                                 onDragStart={(e) => handleDragStart(e, m.id, 'optional')}
                                 className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
                             >
+                                {m.google_photo_url ? (
+                                  <img 
+                                    src={m.google_photo_url} 
+                                    alt={m.name} 
+                                    className="w-4 h-4 rounded-full object-cover"
+                                    onError={(e) => {
+                                      e.currentTarget.style.display = 'none';
+                                      const next = e.currentTarget.nextElementSibling as HTMLElement;
+                                      if (next) next.style.display = 'flex';
+                                    }}
+                                  />
+                                ) : (
+                                  <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px]">
+                                    {m.name.charAt(0)}
+                                  </div>
+                                )}
+                                {/* Fallback if image fails but exists */}
+                                {m.google_photo_url && (
+                                  <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px] hidden">
+                                    {m.name.charAt(0)}
+                                  </div>
+                                )}
                                 {m.name}
                                 <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full"><X className="w-3 h-3 opacity-70" /></button>
                             </div>
@@ -581,11 +667,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
       {error && <div className="text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
 
-      {/* 3. MAIN CONTENT */}
       <div className="flex-grow min-h-0">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
-          
-          {/* CALENDAR */}
           <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
             <div className="flex items-center justify-between mb-4 flex-none">
               <h3 className="font-semibold text-e3-white text-sm">{format(currentMonth, 'MMMM yyyy')}</h3>
@@ -611,7 +694,10 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                 const isSelected = selectedDate && isSameDay(date, selectedDate);
                 const isWorkDay = isWorkingDay(date);
                 const isPast = date < new Date() && !isSameDay(date, new Date());
-                
+                const dateStr = format(date, 'yyyy-MM-dd');
+                const freeMembersForDay = dailyAvailabilityMap.get(dateStr) || new Set();
+                const hasAvailability = freeMembersForDay.size > 0;
+
                 return (
                   <button
                     key={index}
@@ -621,17 +707,16 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                       aspect-square rounded-md text-xs font-medium relative flex flex-col items-center justify-center gap-1 transition-all
                       ${!isCurrentMonth ? 'text-e3-white/10' 
                         : isSelected ? 'bg-e3-emerald text-e3-space-blue font-bold shadow-lg' 
-                        : isWorkDay && !isPast ? 'text-e3-white bg-e3-white/5 hover:bg-e3-white/10' 
+                        : isWorkDay && !isPast && hasAvailability ? 'text-e3-white bg-e3-white/5 hover:bg-e3-white/10' 
                         : 'text-e3-white/20 cursor-not-allowed'}
                     `}
                   >
                     <span>{format(date, 'd')}</span>
                     
-                    {!loading && isCurrentMonth && isWorkDay && !isPast && (
+                    {!loading && isCurrentMonth && isWorkDay && !isPast && hasAvailability && (
                         <div className="flex gap-0.5 justify-center flex-wrap px-1 max-w-full">
                            {selectedMembers.all.map(m => {
-                               const isFree = isMemberFreeOnDate(m.email, date);
-                               if (!isFree) return null;
+                               if (!freeMembersForDay.has(m.email)) return null;
                                return (
                                    <div 
                                      key={m.id} 
@@ -648,7 +733,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             </div>
           </div>
 
-          {/* SLOTS */}
           <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
             <div className="flex flex-col gap-3 mb-4 flex-none border-b border-e3-white/5 pb-3">
               <div className="flex items-center justify-between">

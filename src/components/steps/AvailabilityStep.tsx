@@ -299,8 +299,22 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     workingEnd.setHours(endHour, endMinute, 0, 0);
     
     let effectiveStart = new Date(workingStart);
+    
+    // If today, ensure we respect the minimum notice period AND round to a clean time
     if (startOfDay.toDateString() === now.toDateString() && effectiveStart < minDateTime) {
+      // 1. Start at the minimum safe time (e.g., 14:12)
       effectiveStart = new Date(minDateTime);
+      
+      // 2. Round UP to the next 15-minute slot (e.g., 14:12 -> 14:15)
+      const minutes = effectiveStart.getMinutes();
+      const remainder = minutes % 15;
+      
+      if (remainder !== 0) {
+        // Add the difference to reach the next 15-minute mark
+        effectiveStart.setMinutes(minutes + (15 - remainder));
+        effectiveStart.setSeconds(0);
+        effectiveStart.setMilliseconds(0);
+      }
     }
     
     let currentTime = new Date(effectiveStart);

@@ -863,7 +863,15 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         <button onClick={handleBack} className="order-2 sm:order-1 py-2.5 px-6 text-sm text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40">
           Back
         </button>
-        <button onClick={onNext} disabled={!appState.selectedDate || !appState.selectedTime} className="order-1 sm:order-2 cta py-2.5 px-8 text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-e3-emerald/20">
+        <button 
+          onClick={onNext} 
+          disabled={
+            !appState.selectedDate || 
+            !appState.selectedTime || 
+            (appState.requiredMembers.size > 0 && selectedMembers.required.length === 0)
+          } 
+          className="order-1 sm:order-2 cta py-2.5 px-8 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           Continue
         </button>
       </div>

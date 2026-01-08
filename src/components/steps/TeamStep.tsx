@@ -11,17 +11,16 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
   const [error, setError] = useState('');
   const { teamMembers, loading, error: dataError } = useTeamData();
 
-  // --- 1. URL AUTO-REDIRECT LOGIC ---
-  // Checks if the URL has ?step=availability and auto-advances if so
+  // --- URL AUTO-REDIRECT LOGIC ---
   useEffect(() => {
-    // Wait for team members to finish loading
+    // 1. Wait for team members to finish loading
     if (loading || teamMembers.length === 0) return;
 
-    // Check URL params
+    // 2. Check URL params
     const params = new URLSearchParams(window.location.search);
     const stepParam = params.get('step');
 
-    // Only auto-advance if URL specifically says "step=availability"
+    // 3. Only auto-advance if URL specifically says "step=availability"
     if (stepParam === 'availability') {
       const requiredParam = params.get('required');
       const optionalParam = params.get('optional');
@@ -29,7 +28,7 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
       const newRequired = new Set<string>();
       const newOptional = new Set<string>();
 
-      // Helper to find a member ID by their email (case-insensitive)
+      // Helper to find a member ID by their email
       const findMember = (email: string) => 
         teamMembers.find(m => m.email.toLowerCase() === email.trim().toLowerCase());
 
@@ -49,18 +48,25 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
         });
       }
 
-      // If we found members, update state and JUMP to next step immediately
+      // 4. If we found members, update state and JUMP to next step
       if (newRequired.size > 0 || newOptional.size > 0) {
         onStateChange({
           requiredMembers: newRequired,
           optionalMembers: newOptional
         });
+
+        // The required/optional params will stay in the URL
+        const newUrl = new URL(window.location.href);
+        newUrl.searchParams.delete('step');
+        window.history.replaceState(null, '', newUrl.toString());
+
+        // Jump to next step
         onNext(); 
       }
     }
   }, [loading, teamMembers, onNext, onStateChange]);
 
-  // --- 2. Robust Filter Logic Helper ---
+  // --- Robust Filter Logic Helper ---
   // Matches "sunday" against "Sunday Natural" or "sunday" slug
   const getFilteredMembers = () => {
     if (!clientTeamFilter) return teamMembers;

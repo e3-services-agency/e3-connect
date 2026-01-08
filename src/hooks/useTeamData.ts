@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { TeamMemberConfig, ClientTeam } from '@/types/team';
 
-// 1. Update signature to accept an optional slug
 export const useTeamData = (slug?: string) => {
   const [teamMembers, setTeamMembers] = useState<TeamMemberConfig[]>([]);
   const [clientTeams, setClientTeams] = useState<ClientTeam[]>([]);
@@ -11,31 +10,21 @@ export const useTeamData = (slug?: string) => {
 
   const fetchClientTeams = async () => {
     try {
-      let data, fetchError;
-
+      let data;
+      
       if (slug) {
-        // ✅ SECURE PATH: Public Booking Page
-        // Uses the Secure RPC to fetch ONLY the specific team
+        // Secure RPC
         const result = await (supabase as any)
           .rpc('get_client_team_by_slug', { slug_param: slug });
         data = result.data;
-        fetchError = result.error;
       } else {
-        // ⚠️ ADMIN PATH: Internal Dashboard
-        // Fetches ALL teams (requires authentication once RLS is enabled)
+        // Admin Fetch
         const result = await (supabase as any)
           .from('client_teams')
           .select('*')
           .eq('is_active', true)
           .order('name');
         data = result.data;
-        fetchError = result.error;
-      }
-
-      if (fetchError) {
-        console.error('Error fetching client teams:', fetchError);
-        setError('Failed to fetch client teams');
-        return [];
       }
 
       return data?.map((team: any) => ({
@@ -48,54 +37,60 @@ export const useTeamData = (slug?: string) => {
         updatedAt: team.updated_at
       })) || [];
     } catch (err) {
-      console.error('Error in fetchClientTeams:', err);
+      console.error('Error fetching teams:', err);
       return [];
     }
   };
 
-  const fetchTeamMembers = async () => {
+  const fetchTeamMembers = async (currentTeams: ClientTeam[]) => {
     try {
-      // Use the new secure function that enforces admin access
+      if (slug) {
+        // ✅ SECURE PUBLIC FETCH
+        const { data, error } = await (supabase as any)
+          .rpc('get_public_team_members_by_slug', { slug_param: slug });
+
+        if (error) throw error;
+        
+        // Find the team object that matches the slug to satisfy UI requirements
+        const activeTeam = currentTeams.find(t => t.booking_slug === slug);
+        const teamArray = activeTeam ? [activeTeam] : [];
+
+        return (data || []).map((member: any) => ({
+          id: member.id,
+          name: member.name,
+          email: member.email,
+          role: member.role_name,
+          clientTeams: teamArray, // Only attach the current team
+          googleCalendarConnected: true, 
+          google_photo_url: member.google_photo_url,
+          isActive: member.is_active,
+          // Hide sensitive data
+          googleCalendarId: null,
+          google_profile_data: null,
+          createdAt: null,
+          updatedAt: null
+        }));
+      } 
+      
+      // ⚠️ ADMIN FETCH (Keep existing logic)
       const { data: membersData, error: membersError } = await (supabase as any)
         .rpc('get_team_members_with_roles');
 
-      if (membersError) {
-        console.error('Error fetching team members:', membersError);
-        setError('Failed to fetch team members');
-        return [];
-      }
-
+      if (membersError) throw membersError;
       if (!membersData) return [];
 
-      // Then get their client team relationships
       const memberIds = membersData.map((member: any) => member.id);
-      const { data: relationshipsData, error: relationshipsError } = await (supabase as any)
+      const { data: relationshipsData } = await (supabase as any)
         .from('team_member_client_teams')
-        .select(`
-          team_member_id,
-          client_teams:client_team_id (
-            id,
-            name,
-            description,
-            booking_slug,
-            is_active,
-            created_at,
-            updated_at
-          )
-        `)
+        .select(`team_member_id, client_teams:client_team_id (*)`)
         .in('team_member_id', memberIds);
 
-      if (relationshipsError) {
-        console.error('Error fetching relationships:', relationshipsError);
-      }
-
-      // Combine the data
       return membersData.map((member: any) => {
         const memberRelationships = relationshipsData?.filter(
           (rel: any) => rel.team_member_id === member.id
         ) || [];
 
-        const clientTeams = memberRelationships
+        const memberClientTeams = memberRelationships
           .map((rel: any) => rel.client_teams)
           .filter(Boolean)
           .map((team: any) => ({
@@ -112,9 +107,9 @@ export const useTeamData = (slug?: string) => {
           id: member.id,
           name: member.name,
           email: member.email,
-          role: member.role_name, // Now using role_name from the view
-          roleId: member.role_id, // Add role_id for updates
-          clientTeams,
+          role: member.role_name,
+          roleId: member.role_id,
+          clientTeams: memberClientTeams,
           googleCalendarConnected: !!member.google_calendar_id,
           googleCalendarId: member.google_calendar_id,
           google_photo_url: member.google_photo_url,
@@ -124,8 +119,9 @@ export const useTeamData = (slug?: string) => {
           updatedAt: member.updated_at
         };
       });
+
     } catch (err) {
-      console.error('Error in fetchTeamMembers:', err);
+      console.error('Error fetching members:', err);
       return [];
     }
   };
@@ -133,14 +129,13 @@ export const useTeamData = (slug?: string) => {
   const fetchData = async () => {
     setLoading(true);
     setError(null);
-
     try {
-      const [teams, members] = await Promise.all([
-        fetchClientTeams(),
-        fetchTeamMembers()
-      ]);
-
+      // 1. Fetch Teams first so we have them for the member mapping
+      const teams = await fetchClientTeams();
       setClientTeams(teams);
+
+      // 2. Fetch Members (passing teams to helper)
+      const members = await fetchTeamMembers(teams);
       setTeamMembers(members);
     } catch (err) {
       console.error('Error fetching data:', err);
@@ -152,13 +147,7 @@ export const useTeamData = (slug?: string) => {
 
   useEffect(() => {
     fetchData();
-  }, [slug]); // 2. Add slug to dependency array
+  }, [slug]);
 
-  return {
-    teamMembers,
-    clientTeams,
-    loading,
-    error,
-    refetch: fetchData
-  };
+  return { teamMembers, clientTeams, loading, error, refetch: fetchData };
 };

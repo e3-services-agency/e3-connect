@@ -7,7 +7,6 @@ import { StepProps, TimeSlot } from '../../types/scheduling';
 import { TimezoneSelector } from '../TimezoneSelector';
 import { useBusinessHours } from '../../hooks/useBusinessHours';
 
-// --- TYPES ---
 interface AvailabilityStepProps extends StepProps {
   clientTeamFilter?: string;
 }
@@ -30,7 +29,6 @@ interface MemberColor {
   hex: string;
 }
 
-// HIGH CONTRAST PALETTE
 const MEMBER_COLORS: MemberColor[] = [
   { border: 'border-blue-500/40', bg: 'bg-blue-500/20', text: 'text-blue-400', hex: '#60a5fa' },
   { border: 'border-orange-500/40', bg: 'bg-orange-500/20', text: 'text-orange-400', hex: '#fb923c' },
@@ -48,11 +46,8 @@ const MEMBER_COLORS: MemberColor[] = [
 
 const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, onBack, onStateChange, clientTeamFilter }) => {
   
-  // 1. DETERMINE ACTIVE FILTER (Slug or UUID)
   const activeFilter = useMemo(() => {
     if (clientTeamFilter) return clientTeamFilter;
-    
-    // Fallback: Parse URL manually
     const pathParts = window.location.pathname.split('/');
     const bookIndex = pathParts.indexOf('book');
     if (bookIndex !== -1 && pathParts[bookIndex + 1]) {
@@ -61,36 +56,24 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     return undefined;
   }, [clientTeamFilter]);
 
-  // 2. FETCH MEMBERS (Works with Slug OR UUID)
   const { teamMembers, loading: membersLoading } = useTeamData(activeFilter);
 
-  // 3. RESOLVE TEAM UUID (Critical Fix)
-  // We need the UUID for the business_hours table. If activeFilter is "sunday", 
-  // we extract the real ID (d828...) from the loaded team data.
   const resolvedTeamId = useMemo(() => {
     if (!activeFilter) return undefined;
-
-    // Check if activeFilter is ALREADY a UUID
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeFilter);
     if (isUUID) return activeFilter;
-
-    // If it is a Slug, find the UUID in the loaded data
     if (teamMembers.length > 0) {
-       // Look at the first member's clientTeams to find the matching ID
        const team = teamMembers[0].clientTeams.find(t => 
          t.booking_slug === activeFilter || 
          t.name.toLowerCase().replace(/ /g, '-') === activeFilter
        );
        return team?.id || teamMembers[0].clientTeams[0].id;
     }
-    
-    return undefined; // Waiting for data to load
+    return undefined;
   }, [activeFilter, teamMembers]);
 
-  // 4. FETCH BUSINESS HOURS (Now using the UUID)
   const { getWorkingHoursForDate, isWorkingDay } = useBusinessHours(resolvedTeamId);
 
-  // --- STATE ---
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -102,12 +85,10 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   
   const hasInitialized = useRef(false);
 
-  // 5. SIMPLIFIED MEMBER FILTERING
   const connectedMembers = useMemo(() => {
     return teamMembers.filter(member => !!member.email);
   }, [teamMembers]);
 
-  // 6. INITIALIZATION LOGIC
   useEffect(() => {
     if (membersLoading || connectedMembers.length === 0) return;
     if (hasInitialized.current) return;
@@ -148,7 +129,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     hasInitialized.current = true;
   }, [connectedMembers, membersLoading, appState.requiredMembers, appState.optionalMembers, onStateChange]);
 
-  // 7. URL SYNC
   useEffect(() => {
     if (!hasInitialized.current) return;
 
@@ -176,7 +156,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   }, [appState.requiredMembers, appState.optionalMembers, connectedMembers]);
 
-  // 8. SELECTED MEMBERS LOGIC
   const selectedMembers = useMemo(() => {
     const requiredMembers = Array.from(appState.requiredMembers)
       .map(memberId => connectedMembers.find(m => m.id === memberId))
@@ -189,7 +168,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const allSelectedIds = new Set([...appState.requiredMembers, ...appState.optionalMembers]);
     const poolMembers = connectedMembers.filter(m => !allSelectedIds.has(m.id));
 
-    // Sort to ensure consistent colors
     const sortedAllMembers = [...connectedMembers].sort((a, b) => a.name.localeCompare(b.name));
     
     const assignColor = (memberId: string): MemberColor => {
@@ -220,7 +198,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     return eachDayOfInterval({ start, end });
   }, [currentMonth]);
 
-  // --- DATA LOADING ---
   useEffect(() => {
     const loadSchedulingSettings = async () => {
       try {
@@ -287,7 +264,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     loadMonthlyAvailability();
   }, [currentMonth, selectedMemberEmails.all.length > 0 ? selectedMemberEmails.all.join(',') : 'empty']);
 
-  // --- STRICT SLOT GENERATOR ---
   const generateSlotsForDate = useCallback((date: Date): TimeSlot[] => {
     if (!schedulingSettings) return [];
 
@@ -379,7 +355,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     return slots;
   }, [schedulingSettings, appState.duration, selectedMemberEmails.required, monthlyBusySchedule, getWorkingHoursForDate, selectedMembers]);
 
-  // --- CALENDAR DOTS ---
   const dailyAvailabilityMap = useMemo(() => {
     const map = new Map<string, Set<string>>();
     if (selectedMemberEmails.required.length === 0 || !schedulingSettings) return map;
@@ -403,7 +378,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     return map;
   }, [calendarDays, generateSlotsForDate, selectedMemberEmails.required, schedulingSettings]);
 
-  // --- SLOTS FOR SELECTED DATE ---
   useEffect(() => {
     if (!selectedDate || Object.keys(monthlyBusySchedule).length === 0) {
       setAvailableSlots([]);
@@ -413,7 +387,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     setAvailableSlots(slots);
   }, [selectedDate, generateSlotsForDate]);
 
-  // --- HANDLERS ---
   const handleDragStart = (e: React.DragEvent, memberId: string, from: 'required' | 'optional' | 'pool') => {
     setDraggedMember({ id: memberId, from });
     e.dataTransfer.setData('text/plain', memberId);
@@ -494,7 +467,15 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     onBack();
   };
 
-  // --- RENDER ---
+  const handleNextWithLogs = () => {
+    console.log('--- Transitioning from AvailabilityStep to ConfirmationStep ---');
+    console.log('Current Required IDs (Set):', Array.from(appState.requiredMembers));
+    console.log('Current Optional IDs (Set):', Array.from(appState.optionalMembers));
+    console.log('Selected Date:', appState.selectedDate);
+    console.log('Selected Time:', appState.selectedTime);
+    onNext();
+  };
+
   if (membersLoading) {
     return (
       <div className="flex items-center justify-center py-12 text-e3-white/60 gap-3">
@@ -512,10 +493,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   return (
     <div className="flex flex-col h-full gap-4">
-      {/* 1. FLEX HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-2 flex-none">
-        
-        {/* Left: Title */}
         <div className="flex-none flex items-center gap-3 pt-1 min-w-[200px]">
           <Calendar className="w-6 h-6 text-e3-azure" />
           <div>
@@ -524,7 +502,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
           </div>
         </div>
 
-        {/* Right: Pool Zone */}
         <div className="flex-grow min-w-0 w-full md:w-auto">
             {selectedMembers.pool.length > 0 && (
                 <div 
@@ -548,19 +525,9 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                                     src={m.google_photo_url} 
                                     alt={m.name} 
                                     className="w-4 h-4 rounded-full object-cover"
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = 'none';
-                                      const next = e.currentTarget.nextElementSibling as HTMLElement;
-                                      if (next) next.style.display = 'flex';
-                                    }}
                                   />
                                 ) : (
                                   <div className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[8px]">
-                                    {m.name.charAt(0)}
-                                  </div>
-                                )}
-                                {m.google_photo_url && (
-                                  <div className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[8px] hidden">
                                     {m.name.charAt(0)}
                                   </div>
                                 )}
@@ -573,9 +540,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         </div>
       </div>
 
-      {/* 2. DRAG ZONES */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-none">
-            {/* REQUIRED */}
             <div 
                 className={`rounded-lg p-3 border border-e3-azure/20 transition-colors min-h-[80px] ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-e3-emerald/50' : 'bg-e3-space-blue/30'}`}
                 onDragOver={handleDragOver}
@@ -611,19 +576,9 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                                     src={m.google_photo_url} 
                                     alt={m.name} 
                                     className="w-4 h-4 rounded-full object-cover"
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = 'none';
-                                      const next = e.currentTarget.nextElementSibling as HTMLElement;
-                                      if (next) next.style.display = 'flex';
-                                    }}
                                   />
                                 ) : (
                                   <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px]">
-                                    {m.name.charAt(0)}
-                                  </div>
-                                )}
-                                {m.google_photo_url && (
-                                  <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px] hidden">
                                     {m.name.charAt(0)}
                                   </div>
                                 )}
@@ -635,7 +590,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                 </div>
             </div>
 
-            {/* OPTIONAL */}
             <div 
                 className={`rounded-lg p-3 border border-e3-azure/20 transition-colors min-h-[80px] ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-blue-400/50' : 'bg-e3-space-blue/30'}`}
                 onDragOver={handleDragOver}
@@ -671,19 +625,9 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                                     src={m.google_photo_url} 
                                     alt={m.name} 
                                     className="w-4 h-4 rounded-full object-cover"
-                                    onError={(e) => {
-                                      e.currentTarget.style.display = 'none';
-                                      const next = e.currentTarget.nextElementSibling as HTMLElement;
-                                      if (next) next.style.display = 'flex';
-                                    }}
                                   />
                                 ) : (
                                   <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px]">
-                                    {m.name.charAt(0)}
-                                  </div>
-                                )}
-                                {m.google_photo_url && (
-                                  <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px] hidden">
                                     {m.name.charAt(0)}
                                   </div>
                                 )}
@@ -700,7 +644,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
       <div className="flex-grow min-h-0">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
-          {/* CALENDAR */}
           <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
             <div className="flex items-center justify-between mb-4 flex-none">
               <h3 className="font-semibold text-e3-white text-sm">{format(currentMonth, 'MMMM yyyy')}</h3>
@@ -726,7 +669,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                 const isSelected = selectedDate && isSameDay(date, selectedDate);
                 const isWorkDay = isWorkingDay(date);
                 const isPast = date < new Date() && !isSameDay(date, new Date());
-                
                 const dateStr = format(date, 'yyyy-MM-dd');
                 const freeMembersForDay = dailyAvailabilityMap.get(dateStr) || new Set();
                 const hasAvailability = freeMembersForDay.size > 0;
@@ -745,7 +687,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                     `}
                   >
                     <span>{format(date, 'd')}</span>
-                    
                     {!loading && isCurrentMonth && isWorkDay && !isPast && hasAvailability && (
                         <div className="flex gap-0.5 justify-center flex-wrap px-1 max-w-full">
                            {selectedMembers.all.map(m => {
@@ -766,7 +707,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             </div>
           </div>
 
-          {/* SLOTS */}
           <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
             <div className="flex flex-col gap-3 mb-4 flex-none border-b border-e3-white/5 pb-3">
               <div className="flex items-center justify-between">
@@ -808,7 +748,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                     <p className="text-[10px] opacity-70 mt-1">Try removing required members.</p>
                   </div>
                ) : (
-                  <div className="absolute inset-0 overflow-y-auto pr-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+                  <div className="absolute inset-0 overflow-y-auto pr-1">
                     <div className={`grid ${gridCols} gap-2 pb-2`}>
                       {availableSlots.map((slot, index) => {
                         const isSelected = appState.selectedTime === slot.start;
@@ -836,7 +776,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                                             key={attendee.email}
                                             style={{ backgroundColor: attendee.color?.hex }}
                                             className="w-1.5 h-1.5 rounded-full"
-                                            title={`${attendee.name} is available`}
                                         />
                                     ))
                                 }
@@ -864,7 +803,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
           Back
         </button>
         <button 
-          onClick={onNext} 
+          onClick={handleNextWithLogs} 
           disabled={
             !appState.selectedDate || 
             !appState.selectedTime || 
@@ -872,12 +811,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
           } 
           className="order-1 sm:order-2 cta py-2.5 px-8 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          Continue
-        </button>
-      </div>
-      
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-sm border-t border-e3-white/10 sm:hidden z-50">
-        <button onClick={onNext} disabled={!appState.selectedDate || !appState.selectedTime} className="w-full cta py-3 text-sm disabled:opacity-50 disabled:cursor-not-allowed">
           Continue
         </button>
       </div>

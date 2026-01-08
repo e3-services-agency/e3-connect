@@ -22,7 +22,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
   const [sessionTitle, setSessionTitle] = useState(() => {
     if (appState.bookingTitle) return appState.bookingTitle;
     
-    // Get client name from URL slug or client team
     const getClientName = () => {
       const path = window.location.pathname;
       const slug = path.split('/').pop();
@@ -50,6 +49,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
   const [sessionDescription, setSessionDescription] = useState(appState.bookingDescription || '');
 
   const confirmBooking = async () => {
+    // Validate required fields
     if (!appState.selectedTime || !appState.selectedDate || !sessionTopic.trim()) {
       if (!sessionTopic.trim()) {
         toast.error('Please add a topic for the meeting');
@@ -72,35 +72,30 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       const meetingDuration = appState.duration || 30;
       const endTime = new Date(startTime.getTime() + meetingDuration * 60000);
 
-      // Prepare attendee emails (UUIDs -> Emails)
+      // Prepare attendee emails (Resolving UUIDs from state to emails)
       const emailSet = new Set<string>();
-      
-      // Add Team Emails
       requiredTeam.forEach(m => { if(m.email) emailSet.add(m.email.toLowerCase()) });
       optionalTeam.forEach(m => { if(m.email) emailSet.add(m.email.toLowerCase()) });
       
-      // Add Booker Email
       if (appState.bookerEmail) {
         emailSet.add(appState.bookerEmail.toLowerCase());
       }
       
-      // Add External Guest Emails
       const guestEmailsArray = Array.isArray(appState.guestEmails) ? appState.guestEmails : [];
       guestEmailsArray.forEach(email => emailSet.add(email.toLowerCase()));
 
       const attendeeEmails = Array.from(emailSet);
       const organizerEmail = requiredTeam[0].email || 'admin@e3-services.com';
 
-      // Use the current session title and description
       const meetingTitle = `💼 ${sessionTitle.trim()} – ${sessionTopic.trim()}`;
-      const meetingDescriptionBase = `${sessionTopic.trim()}\n\n${sessionDescription.trim()}`;
+      const meetingDescription = `${sessionTopic.trim()}\n\n${sessionDescription.trim()}`;
 
       // Save meeting to database
       const { data: meeting, error: dbError } = await (supabase as any)
         .from('meetings')
         .insert({
           title: meetingTitle,
-          description: meetingDescriptionBase,
+          description: meetingDescription,
           start_time: startTime.toISOString(),
           end_time: endTime.toISOString(),
           organizer_email: organizerEmail,
@@ -116,7 +111,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       const currentUrl = window.location.href;
       const bookingSystemLink = `<a href="${currentUrl}">E3 Connect Booking System</a>`;
 
-      // Create formatted calendar event description
+      // Formatted calendar event description (Restored from your images)
       let calendarDescription = `📌 <b>Session Details</b><br>`;
       calendarDescription += `Topic: ${sessionTopic}<br>`;
       if (sessionDescription.trim()) {
@@ -131,18 +126,11 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
         calendarDescription += `Optional Attendee(s): ${optionalTeam.map(m => m.name).join(', ')}<br>`;
       }
 
-      // Create calendar event
       const eventData = {
         summary: meetingTitle,
         description: calendarDescription,
-        start: {
-          dateTime: startTime.toISOString(),
-          timeZone: userTimezone
-        },
-        end: {
-          dateTime: endTime.toISOString(),
-          timeZone: userTimezone
-        },
+        start: { dateTime: startTime.toISOString(), timeZone: userTimezone },
+        end: { dateTime: endTime.toISOString(), timeZone: userTimezone },
         attendees: attendeeEmails.map(email => ({ email }))
       };
 
@@ -168,16 +156,15 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       }
 
       setMeetingData(finalMeetingData);
-      toast.success('Meeting booked successfully! Calendar invites have been sent.');
+      toast.success('Meeting booked successfully!');
       setIsBooked(true);
     } catch (error) {
-      console.error('Error booking meeting:', error);
+      console.error('Booking error:', error);
       toast.error(`Failed to book meeting: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsBooking(false);
     }
   };
-  
 
   const resetFlow = () => {
     onStateChange({
@@ -194,21 +181,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       bookerName: undefined,
       bookerEmail: undefined
     });
-  };
-
-  const handleTitleChange = (value: string) => {
-    setSessionTitle(value);
-    onStateChange({ bookingTitle: value });
-  };
-  
-  const handleTopicChange = (value: string) => {
-    setSessionTopic(value);
-    onStateChange({ bookingTopic: value });
-  };
-
-  const handleDescriptionChange = (value: string) => {
-    setSessionDescription(value);
-    onStateChange({ bookingDescription: value });
   };
 
   if (!appState.selectedTime) return null;
@@ -244,6 +216,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
         </h2>
         <p className="text-e3-white/80 mb-6">Your meeting has been scheduled and calendar invites have been sent to all attendees.</p>
         
+        {/* Success Google Meet Link UI (Restored Icon and Paragraph) */}
         {meetingData?.google_meet_link && (
           <div className="bg-e3-emerald/10 border border-e3-emerald/30 rounded-lg p-4 mb-6">
             <div className="flex items-center justify-center gap-2 mb-2">
@@ -314,10 +287,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
           </div>
         </div>
         
-        <button 
-          onClick={resetFlow} 
-          className="cta focusable"
-        >
+        <button onClick={resetFlow} className="cta focusable">
           Schedule Another Meeting
         </button>
       </div>
@@ -338,13 +308,13 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
           <input
             type="text"
             value={sessionTitle}
-            onChange={(e) => handleTitleChange(e.target.value)}
+            onChange={(e) => { setSessionTitle(e.target.value); onStateChange({ bookingTitle: e.target.value }); }}
             className="w-full bg-e3-space-blue/50 border border-e3-white/20 rounded-lg px-4 py-3 text-e3-white placeholder-e3-white/60 focus:border-e3-azure outline-none text-base sm:text-lg"
             placeholder="Enter session title..."
           />
         </div>
 
-        {/* TOPIC Section - Required */}
+        {/* Topic */}
         <div className="bg-e3-space-blue/70 p-4 sm:p-6 rounded-lg border border-e3-white/10">
           <label className="block text-sm font-medium text-e3-emerald mb-3">
             Topic <span className="text-red-400">*</span>
@@ -353,7 +323,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
           <input
             type="text"
             value={sessionTopic}
-            onChange={(e) => handleTopicChange(e.target.value)}
+            onChange={(e) => { setSessionTopic(e.target.value); onStateChange({ bookingTopic: e.target.value }); }}
             className="w-full bg-e3-space-blue/50 border border-e3-white/20 rounded-lg px-4 py-3 text-e3-white placeholder-e3-white/60 focus:border-e3-azure outline-none text-base sm:text-lg"
             placeholder="e.g., Project kickoff, Strategy review, Product demo..."
             required
@@ -418,18 +388,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
                   </div>
                 </div>
               )}
-              {appState.guestEmails && appState.guestEmails.length > 0 && (
-                <div>
-                  <div className="text-sm font-medium text-e3-azure mb-1">Guest Invitees</div>
-                  <div className="flex flex-wrap gap-1">
-                    {appState.guestEmails.map(email => (
-                      <span key={email} className="text-xs bg-e3-emerald/20 px-2 py-1 rounded-full text-e3-emerald">
-                        {email}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -466,7 +424,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
             <div className="px-4 sm:px-6 pb-4 sm:pb-6">
               <Textarea
                 value={sessionDescription}
-                onChange={(e) => handleDescriptionChange(e.target.value)}
+                onChange={(e) => { setSessionDescription(e.target.value); onStateChange({ bookingDescription: e.target.value }); }}
                 placeholder="Add meeting notes, agenda, goals, or any relevant context..."
                 className="min-h-[120px] bg-e3-space-blue/50 border-e3-white/20 focus:border-e3-azure text-e3-white placeholder-e3-white/60"
               />
@@ -488,17 +446,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
             onClick={confirmBooking}
             disabled={isBooking || !sessionTopic.trim()}
             className="order-1 sm:order-2 cta disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isBooking ? 'Booking...' : 'Confirm & Book Meeting'}
-          </button>
-        </div>
-
-        {/* Sticky CTA for mobile */}
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-sm border-t border-e3-white/10 sm:hidden z-50">
-          <button 
-            onClick={confirmBooking}
-            disabled={isBooking || !sessionTopic.trim()}
-            className="w-full cta disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isBooking ? 'Booking...' : 'Confirm & Book Meeting'}
           </button>

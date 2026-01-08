@@ -15,13 +15,11 @@ export const useTeamData = (slug?: string) => {
       
       if (slug) {
         // ✅ SECURE PATH: Public Booking Page
-        // Fetches ONLY the single team matching the slug
         const result = await (supabase as any)
           .rpc('get_client_team_by_slug', { slug_param: slug });
         data = result.data;
       } else {
         // ⚠️ ADMIN PATH: Internal Dashboard
-        // Fetches ALL active teams
         const result = await (supabase as any)
           .from('client_teams')
           .select('*')
@@ -45,24 +43,23 @@ export const useTeamData = (slug?: string) => {
     }
   };
 
-  // 2. Fetch Team Members
+  // 2. Fetch Team Members (Accepts teams as argument)
   const fetchTeamMembers = async (currentTeams: ClientTeam[]) => {
     try {
       if (slug) {
         // ✅ SECURE PATH: Public Booking Page
-        // Fetches only public-safe member data for this specific slug
         const { data, error } = await (supabase as any)
           .rpc('get_public_team_members_by_slug', { slug_param: slug });
 
         if (error) throw error;
         
         // --- ROBUSTNESS FIX ---
-        // Ensure we always have a valid team object to attach to the member.
-        // This guarantees the UI filter (TeamStep.tsx) allows the member to be seen.
+        // Find the matching team object to attach to the member.
+        // If missing, create a "Virtual Team" so the UI filter still works.
         const activeTeam = currentTeams.find(t => t.booking_slug === slug) || {
             id: 'virtual-team-id', 
-            name: slug.charAt(0).toUpperCase() + slug.slice(1), // Capitalize for display
-            booking_slug: slug, // CRITICAL: Matches the filter in TeamStep
+            name: slug.charAt(0).toUpperCase() + slug.slice(1),
+            booking_slug: slug,
             description: null,
             isActive: true,
             createdAt: null,
@@ -87,7 +84,7 @@ export const useTeamData = (slug?: string) => {
         }));
       } 
       
-      // ⚠️ ADMIN PATH: Internal Dashboard (Existing Logic)
+      // ⚠️ ADMIN PATH: Internal Dashboard (Full Logic)
       const { data: membersData, error: membersError } = await (supabase as any)
         .rpc('get_team_members_with_roles');
 
@@ -146,11 +143,11 @@ export const useTeamData = (slug?: string) => {
     setLoading(true);
     setError(null);
     try {
-      // 1. Fetch Teams first so we have them for the member mapping
+      // 1. Fetch Teams FIRST
       const teams = await fetchClientTeams();
       setClientTeams(teams);
 
-      // 2. Fetch Members (passing teams to helper)
+      // 2. Pass those teams to the Member fetcher
       const members = await fetchTeamMembers(teams);
       setTeamMembers(members);
     } catch (err) {

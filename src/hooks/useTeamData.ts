@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { TeamMemberConfig, ClientTeam } from '@/types/team';
 
-// 🛑 TEST MODE: No Supabase, just static data to verify UI
+// 🧪 SMART TEST MODE
 export const useTeamData = (slugOrId?: string) => {
   const [teamMembers, setTeamMembers] = useState<TeamMemberConfig[]>([]);
   const [clientTeams, setClientTeams] = useState<ClientTeam[]>([]);
@@ -9,13 +9,16 @@ export const useTeamData = (slugOrId?: string) => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Simulate API delay
     setTimeout(() => {
-      console.log('🧪 TEST MODE: Loading Mock Data for input:', slugOrId);
+      console.log('🧪 TEST MODE: Generating data for input:', slugOrId);
 
-      // 1. Mock Team (Matches "sunday")
+      // CRITICAL FIX: We use the input (slugOrId) as the Team ID
+      // This guarantees the TeamStep filter will match it!
+      const mockTeamId = slugOrId || 'default-test-id';
+
+      // 1. Create a Mock Team that matches the input
       const mockTeam = {
-        id: 'test-team-id',
+        id: mockTeamId, // <--- MATCHING ID
         name: 'Sunday Natural (MOCK)',
         booking_slug: 'sunday',
         description: 'Test Description',
@@ -26,14 +29,14 @@ export const useTeamData = (slugOrId?: string) => {
 
       setClientTeams([mockTeam]);
 
-      // 2. Mock Members
+      // 2. Mock Members attached to THAT team
       const mockMembers = [
         {
           id: 'member-1',
           name: 'Test Marcel',
           email: 'marcel@test.com',
           role: 'Co-Founder',
-          clientTeams: [mockTeam], // Attached correctly
+          clientTeams: [mockTeam], // <--- Attached to matching team
           googleCalendarConnected: true,
           google_photo_url: null,
           isActive: true,

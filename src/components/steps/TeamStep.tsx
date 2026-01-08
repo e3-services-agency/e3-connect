@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { StepProps } from '../../types/scheduling';
 import { useTeamData } from '../../hooks/useTeamData';
 import { Loader } from 'lucide-react';
@@ -12,15 +11,83 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
   const [error, setError] = useState('');
   const { teamMembers, loading, error: dataError } = useTeamData();
 
+  // --- 1. URL AUTO-REDIRECT LOGIC ---
+  // Checks if the URL has ?step=availability and auto-advances if so
+  useEffect(() => {
+    // Wait for team members to finish loading
+    if (loading || teamMembers.length === 0) return;
+
+    // Check URL params
+    const params = new URLSearchParams(window.location.search);
+    const stepParam = params.get('step');
+
+    // Only auto-advance if URL specifically says "step=availability"
+    if (stepParam === 'availability') {
+      const requiredParam = params.get('required');
+      const optionalParam = params.get('optional');
+
+      const newRequired = new Set<string>();
+      const newOptional = new Set<string>();
+
+      // Helper to find a member ID by their email (case-insensitive)
+      const findMember = (email: string) => 
+        teamMembers.find(m => m.email.toLowerCase() === email.trim().toLowerCase());
+
+      // Parse 'required' emails from URL
+      if (requiredParam) {
+        decodeURIComponent(requiredParam).split(',').forEach(email => {
+          const m = findMember(email);
+          if (m) newRequired.add(m.id);
+        });
+      }
+
+      // Parse 'optional' emails from URL
+      if (optionalParam) {
+        decodeURIComponent(optionalParam).split(',').forEach(email => {
+          const m = findMember(email);
+          if (m && !newRequired.has(m.id)) newOptional.add(m.id);
+        });
+      }
+
+      // If we found members, update state and JUMP to next step immediately
+      if (newRequired.size > 0 || newOptional.size > 0) {
+        onStateChange({
+          requiredMembers: newRequired,
+          optionalMembers: newOptional
+        });
+        onNext(); 
+      }
+    }
+  }, [loading, teamMembers, onNext, onStateChange]);
+
+  // --- 2. Robust Filter Logic Helper ---
+  // Matches "sunday" against "Sunday Natural" or "sunday" slug
+  const getFilteredMembers = () => {
+    if (!clientTeamFilter) return teamMembers;
+
+    return teamMembers.filter(member => 
+      member.clientTeams.some(team => {
+        // Handle booking_slug which matches your DB column
+        const bookingSlug = (team as any).booking_slug?.toLowerCase();
+        const oldSlug = (team as any).slug?.toLowerCase();
+        const normalizedName = team.name.toLowerCase().replace(/ /g, '-');
+        
+        // Check all possible variations
+        return team.id === clientTeamFilter || 
+               bookingSlug === clientTeamFilter ||
+               oldSlug === clientTeamFilter ||
+               normalizedName === clientTeamFilter ||
+               normalizedName.startsWith(clientTeamFilter);
+      })
+    );
+  };
+
+  // Use the helper to get the list to display
+  const filteredTeamMembers = getFilteredMembers();
+
   // Select all team members functionality
   const handleSelectAll = () => {
-    const filteredMembers = clientTeamFilter 
-      ? teamMembers.filter(member => 
-          member.clientTeams.some(team => team.id === clientTeamFilter)
-        )
-      : teamMembers;
-    
-    const allMemberIds = filteredMembers.map(m => m.id);
+    const allMemberIds = filteredTeamMembers.map(m => m.id);
     onStateChange({
       requiredMembers: new Set(allMemberIds),
       optionalMembers: new Set<string>()
@@ -82,19 +149,9 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
           <p className="text-e3-flame mb-4">{dataError}</p>
           <p className="text-e3-white/60">Please check your database connection and try again.</p>
         </div>
-        <div className="mt-8">
-          {/* No back button needed for first step */}
-        </div>
       </div>
     );
   }
-
-  // Filter team members by client team if specified
-  const filteredTeamMembers = clientTeamFilter 
-    ? teamMembers.filter(member => 
-        member.clientTeams.some(team => team.id === clientTeamFilter)
-      )
-    : teamMembers;
 
   if (filteredTeamMembers.length === 0) {
     return (
@@ -103,9 +160,6 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
         <div className="text-center py-12">
           <p className="text-e3-white/60 mb-4">No team members available for this client.</p>
           <p className="text-e3-white/60">Please contact support if this seems incorrect.</p>
-        </div>
-        <div className="mt-8">
-          {/* No back button needed for first step */}
         </div>
       </div>
     );
@@ -142,8 +196,6 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
                     alt={member.name}
                     className="w-12 h-12 rounded-full border-2 border-e3-azure/30 object-cover"
                     onError={(e) => {
-                      console.error('Google photo failed to load for', member.name, ':', member.google_photo_url);
-                      // Hide image and show initials fallback
                       e.currentTarget.style.display = 'none';
                       const fallback = e.currentTarget.nextElementSibling as HTMLElement;
                       if (fallback) fallback.classList.remove('hidden');
@@ -164,7 +216,16 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
                         {/* Only show client teams that match the filter */}
                         {clientTeamFilter ? (
                           member.clientTeams
-                            .filter(team => team.id === clientTeamFilter)
+                            .filter(team => {
+                                // Match logic for display badges
+                                const bookingSlug = (team as any).booking_slug?.toLowerCase();
+                                const normSlug = (team as any).slug?.toLowerCase();
+                                const normName = team.name.toLowerCase().replace(/ /g, '-');
+                                return team.id === clientTeamFilter || 
+                                       bookingSlug === clientTeamFilter ||
+                                       normSlug === clientTeamFilter ||
+                                       normName.includes(clientTeamFilter);
+                            })
                             .slice(0, 3)
                             .map(team => (
                               <span

@@ -1,16 +1,18 @@
+// src/hooks/useTeamData.ts
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { TeamMemberConfig } from '@/types/team';
 
 export const useTeamData = (clientTeamId?: string) => {
   const [teamMembers, setTeamMembers] = useState<TeamMemberConfig[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Start false to prevent flash
   const [error, setError] = useState<string | null>(null);
 
   const fetchTeamMembers = async () => {
-    // 1. SAFETY CHECK: If no ID is provided, stop here.
+    // 1. SAFETY: If no ID, clear data and stop.
     if (!clientTeamId) {
-      setLoading(true); 
+      setTeamMembers([]);
+      setLoading(false); // Ensure we are NOT loading
       return;
     }
 
@@ -20,7 +22,6 @@ export const useTeamData = (clientTeamId?: string) => {
     try {
       console.log('🔒 Secure fetching for ID:', clientTeamId);
 
-      // 2. CALL SECURE DB FUNCTION
       const { data, error } = await supabase
         .rpc('get_safe_public_team_members', { 
           filter_value: clientTeamId 
@@ -30,13 +31,12 @@ export const useTeamData = (clientTeamId?: string) => {
 
       console.log(`✅ DB returned ${data?.length || 0} members`);
 
-      // 3. TRANSFORM DATA (Flat RPC -> Nested UI Type)
+      // 2. TRANSFORM DATA
       const safeMembers = (data || []).map((row: any) => ({
         id: row.member_id,
         name: row.member_name,
         email: row.member_email,
         role: row.member_role,
-        // We use a dummy ID because the UI needs a string, but the real Role ID is internal
         roleId: '00000000-0000-0000-0000-000000000000', 
         clientTeams: [{
           id: row.client_team_id,
@@ -44,7 +44,6 @@ export const useTeamData = (clientTeamId?: string) => {
           booking_slug: row.client_team_slug,
           isActive: true
         }],
-        // Hardcode sensitive fields to safe defaults
         googleCalendarConnected: false, 
         googleCalendarId: null, 
         google_photo_url: row.member_photo_url,

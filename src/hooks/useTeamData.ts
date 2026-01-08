@@ -1,9 +1,9 @@
-
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { TeamMemberConfig, ClientTeam } from '@/types/team';
 
-export const useTeamData = () => {
+// 1. Update signature to accept an optional slug
+export const useTeamData = (slug?: string) => {
   const [teamMembers, setTeamMembers] = useState<TeamMemberConfig[]>([]);
   const [clientTeams, setClientTeams] = useState<ClientTeam[]>([]);
   const [loading, setLoading] = useState(true);
@@ -11,15 +11,29 @@ export const useTeamData = () => {
 
   const fetchClientTeams = async () => {
     try {
-      // Temporarily bypass type checking until Supabase types are regenerated
-      const { data, error } = await (supabase as any)
-        .from('client_teams')
-        .select('*')
-        .eq('is_active', true)
-        .order('name');
+      let data, fetchError;
 
-      if (error) {
-        console.error('Error fetching client teams:', error);
+      if (slug) {
+        // ✅ SECURE PATH: Public Booking Page
+        // Uses the Secure RPC to fetch ONLY the specific team
+        const result = await (supabase as any)
+          .rpc('get_client_team_by_slug', { slug_param: slug });
+        data = result.data;
+        fetchError = result.error;
+      } else {
+        // ⚠️ ADMIN PATH: Internal Dashboard
+        // Fetches ALL teams (requires authentication once RLS is enabled)
+        const result = await (supabase as any)
+          .from('client_teams')
+          .select('*')
+          .eq('is_active', true)
+          .order('name');
+        data = result.data;
+        fetchError = result.error;
+      }
+
+      if (fetchError) {
+        console.error('Error fetching client teams:', fetchError);
         setError('Failed to fetch client teams');
         return [];
       }
@@ -138,7 +152,7 @@ export const useTeamData = () => {
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [slug]); // 2. Add slug to dependency array
 
   return {
     teamMembers,

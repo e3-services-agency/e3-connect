@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Calendar, Clock, Users, ChevronLeft, ChevronRight, Info, X, Trash2, GripHorizontal } from 'lucide-react';
+import { Calendar, Clock, ChevronLeft, ChevronRight, X, Trash2, GripHorizontal, Loader } from 'lucide-react'; // Added Loader
 import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
 import { useTeamData } from '../../hooks/useTeamData';
 import { supabase } from '../../integrations/supabase/client';
@@ -47,6 +47,24 @@ const MEMBER_COLORS: MemberColor[] = [
 ];
 
 const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, onBack, onStateChange, clientTeamFilter }) => {
+  // 1. DETERMINE ACTIVE FILTER (Important: Do this BEFORE calling hooks)
+  const activeFilter = useMemo(() => {
+    if (clientTeamFilter) return clientTeamFilter;
+    
+    // Fallback: Try to grab slug from URL if prop is missing
+    const pathParts = window.location.pathname.split('/');
+    const bookIndex = pathParts.indexOf('book');
+    if (bookIndex !== -1 && pathParts[bookIndex + 1]) {
+        return pathParts[bookIndex + 1];
+    }
+    return undefined;
+  }, [clientTeamFilter]);
+
+  // 2. HOOKS (Pass the filter!)
+  const { teamMembers, loading: membersLoading } = useTeamData(activeFilter);
+  const { getWorkingHoursForDate, isWorkingDay } = useBusinessHours(activeFilter);
+
+  // --- STATE ---
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -58,42 +76,14 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   
   const hasInitialized = useRef(false);
 
-  const { teamMembers, loading: membersLoading } = useTeamData();
-  const { businessHours, getWorkingHoursForDate, isWorkingDay } = useBusinessHours(clientTeamFilter);
-
-  // 1. ROBUST MEMBER FILTERING
+  // 3. SIMPLIFIED MEMBER FILTERING
+  // The hook now returns *only* valid members for this client. 
+  // We just need to make sure they have an email for Calendar checks.
   const connectedMembers = useMemo(() => {
-    let activeFilter = clientTeamFilter;
-    
-    if (!activeFilter) {
-        // Fallback: Parse URL manually
-        const pathParts = window.location.pathname.split('/');
-        const bookIndex = pathParts.indexOf('book');
-        if (bookIndex !== -1 && pathParts[bookIndex + 1]) {
-            activeFilter = pathParts[bookIndex + 1];
-        }
-    }
+    return teamMembers.filter(member => !!member.email);
+  }, [teamMembers]);
 
-    return teamMembers.filter(member => {
-      const hasCalendar = member.googleCalendarConnected || member.email;
-      let matchesClient = true;
-      if (activeFilter) {
-          matchesClient = member.clientTeams.some(team => {
-              const normalizedName = team.name.toLowerCase().replace(/ /g, '-');
-              const bookingSlug = (team as any).booking_slug?.toLowerCase();
-              const oldSlug = (team as any).slug?.toLowerCase(); // Keep as fallback if needed
-
-              return team.id === activeFilter || 
-                     bookingSlug === activeFilter || 
-                     oldSlug === activeFilter ||
-                     normalizedName === activeFilter;
-          });
-      }
-      return hasCalendar && matchesClient;
-    });
-  }, [teamMembers, clientTeamFilter]);
-
-  // 2. INITIALIZATION
+  // 4. INITIALIZATION (Parse URL Params)
   useEffect(() => {
     if (membersLoading || connectedMembers.length === 0) return;
     if (hasInitialized.current) return;
@@ -122,8 +112,10 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         });
       }
     } else if (appState.requiredMembers.size === 0 && appState.optionalMembers.size === 0) {
+      // Default: Everyone is required if no selection made
       connectedMembers.forEach(m => newRequired.add(m.id));
     } else {
+      // If state already exists (e.g. from previous step), respect it
       hasInitialized.current = true;
       return;
     }
@@ -134,7 +126,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     hasInitialized.current = true;
   }, [connectedMembers, membersLoading, appState.requiredMembers, appState.optionalMembers, onStateChange]);
 
-  // 3. URL SYNC
+  // 5. URL SYNC
   useEffect(() => {
     if (!hasInitialized.current) return;
 
@@ -162,7 +154,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   }, [appState.requiredMembers, appState.optionalMembers, connectedMembers]);
 
-  // 4. SELECTED MEMBERS
+  // 6. SELECTED MEMBERS LOGIC
   const selectedMembers = useMemo(() => {
     const requiredMembers = Array.from(appState.requiredMembers)
       .map(memberId => connectedMembers.find(m => m.id === memberId))
@@ -265,6 +257,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         }
         setMonthlyBusySchedule(memberBusySchedules);
       } catch {
+        // Silent fail for availability check, assume busy only if we can prove it
         setMonthlyBusySchedule({});
       } finally {
         setLoading(false);
@@ -302,18 +295,12 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     
     // If today, ensure we respect the minimum notice period AND round to a clean time
     if (startOfDay.toDateString() === now.toDateString() && effectiveStart < minDateTime) {
-      // 1. Start at the minimum safe time
       effectiveStart = new Date(minDateTime);
-      
-      // 2. Round UP to the next 15-minute slot
       const minutes = effectiveStart.getMinutes();
       const remainder = minutes % 15;
-      
       if (remainder !== 0) {
         effectiveStart.setMinutes(minutes + (15 - remainder));
       }
-
-      // 3. CRITICAL FIX: Always zero out seconds/ms so slots are stable
       effectiveStart.setSeconds(0);
       effectiveStart.setMilliseconds(0);
     }
@@ -409,7 +396,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   }, [selectedDate, generateSlotsForDate]);
 
   // --- HANDLERS ---
-
   const handleDragStart = (e: React.DragEvent, memberId: string, from: 'required' | 'optional' | 'pool') => {
     setDraggedMember({ id: memberId, from });
     e.dataTransfer.setData('text/plain', memberId);
@@ -483,21 +469,28 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   };
 
   const handleBack = () => {
-    // Clean the URL to prevent infinite loop when landing on Team Step
     const params = new URLSearchParams(window.location.search);
     params.delete('step'); 
-    
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', newUrl);
-    
-    // Navigate back
     onBack();
   };
 
-  if (membersLoading) return <div className="text-center py-12 text-e3-white/60">Loading team...</div>;
-  if (connectedMembers.length === 0) return <div className="text-center py-12 text-e3-white/60">No connected team members found.</div>;
+  // --- RENDER ---
+  if (membersLoading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-e3-white/60 gap-3">
+        <Loader className="w-6 h-6 animate-spin" />
+        <span>Loading availability...</span>
+      </div>
+    );
+  }
 
-  // DYNAMIC GRID LAYOUT
+  // Fallback if no members are loaded (unlikely with activeFilter logic)
+  if (connectedMembers.length === 0) {
+     return <div className="text-center py-12 text-e3-white/60">No members found for this team.</div>;
+  }
+
   const gridCols = (appState.duration || 60) <= 30 ? 'grid-cols-3' : 'grid-cols-2';
 
   return (
@@ -549,6 +542,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                                     {m.name.charAt(0)}
                                   </div>
                                 )}
+                                {/* Fallback Initial if Image Fails */}
                                 {m.google_photo_url && (
                                   <div className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[8px] hidden">
                                     {m.name.charAt(0)}
@@ -784,6 +778,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
             <div className="flex-grow relative overflow-hidden min-h-[200px]">
                {!selectedDate ? (
+                  
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-e3-white/30">
                     <Calendar className="w-8 h-8 mb-2 opacity-20" />
                     <p className="text-xs">Select a date on the left</p>

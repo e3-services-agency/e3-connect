@@ -8,25 +8,19 @@ export const useTeamData = (slug?: string) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 1. Fetch Client Teams (The "Folder" needed to organize members)
+  // 1. Fetch Client Teams
   const fetchClientTeams = async () => {
     try {
       let data;
-      
+      console.log('🔍 [1] Fetching Client Team for slug:', slug); 
+
       if (slug) {
-        // ✅ SECURE PATH: Public Booking Page
-        // Try to fetch the specific team using the secure function
         const result = await (supabase as any)
           .rpc('get_client_team_by_slug', { slug_param: slug });
-        
         data = result.data;
-        
-        // If RPC fails/is missing, fall back to empty array (we handle this in fetchTeamMembers)
-        if (result.error) {
-          console.warn('Secure team fetch warning:', result.error);
-        }
+        console.log('✅ [1] Client Team Result:', data);
       } else {
-        // ⚠️ ADMIN PATH: Internal Dashboard
+        // Admin path
         const result = await (supabase as any)
           .from('client_teams')
           .select('*')
@@ -45,73 +39,72 @@ export const useTeamData = (slug?: string) => {
         updatedAt: team.updated_at
       })) || [];
     } catch (err) {
-      console.error('Error in fetchClientTeams:', err);
+      console.error('❌ [1] Error in fetchClientTeams:', err);
       return [];
     }
   };
 
-  // 2. Fetch Members (The "People")
+  // 2. Fetch Members
   const fetchTeamMembers = async (currentTeams: ClientTeam[]) => {
     try {
-      // --- A. SECURE PUBLIC PATH (Booking Page) ---
       if (slug) {
-        // Fetch only public-safe data
+        console.log('🔍 [2] Fetching PUBLIC Members for slug:', slug);
+
         const { data, error } = await (supabase as any)
           .rpc('get_public_team_members_by_slug', { slug_param: slug });
 
         if (error) {
-           console.error('Error fetching public members:', error);
+           console.error('❌ [2] RPC Error:', error);
            throw error;
         }
-
-        // CRITICAL FIX: Ensure we have a valid Team object to attach.
-        // If the fetchClientTeams failed or returned nothing, we create a 
-        // "Virtual Team" so the UI filter (TeamStep.tsx) still accepts the user.
+        
+        console.log('✅ [2] Raw DB Members received:', data);
+        
+        // Find the team to attach
         const activeTeam = currentTeams.find(t => t.booking_slug === slug) || {
             id: 'virtual-team-id', 
-            name: 'Current Team',
-            booking_slug: slug, // This MUST match the prop passed to TeamStep
+            name: slug.charAt(0).toUpperCase() + slug.slice(1),
+            booking_slug: slug,
             description: null,
             isActive: true,
             createdAt: null,
             updatedAt: null
         };
+        console.log('ℹ️ [2] Attaching to Team:', activeTeam.name);
 
-        // Map the DB result to your frontend type
-        return (data || []).map((member: any) => ({
+        const finalMembers = (data || []).map((member: any) => ({
           id: member.id,
           name: member.name,
           email: member.email,
           role: member.role_name,
-          // We manually attach the team here so the UI knows they belong
-          clientTeams: [activeTeam], 
+          clientTeams: [activeTeam], // ATTACH TEAM
           googleCalendarConnected: true, 
           google_photo_url: member.google_photo_url,
           isActive: member.is_active,
-          // Nullify sensitive admin data
           googleCalendarId: null,
           google_profile_data: null,
           createdAt: null,
           updatedAt: null
         }));
+        
+        console.log('✅ [2] Final Mapped Members:', finalMembers);
+        return finalMembers;
       } 
       
-      // --- B. ADMIN PATH (Dashboard) ---
-      // 1. Get all members with roles
+      // Admin Path
+      console.log('ℹ️ [2] Admin Fetch Path');
       const { data: membersData, error: membersError } = await (supabase as any)
         .rpc('get_team_members_with_roles');
 
       if (membersError) throw membersError;
       if (!membersData) return [];
 
-      // 2. Get the "Join Table" links to see who belongs to which team
       const memberIds = membersData.map((member: any) => member.id);
       const { data: relationshipsData } = await (supabase as any)
         .from('team_member_client_teams')
         .select(`team_member_id, client_teams:client_team_id (*)`)
         .in('team_member_id', memberIds);
 
-      // 3. Combine them
       return membersData.map((member: any) => {
         const memberRelationships = relationshipsData?.filter(
           (rel: any) => rel.team_member_id === member.id
@@ -148,7 +141,7 @@ export const useTeamData = (slug?: string) => {
       });
 
     } catch (err) {
-      console.error('Error in fetchTeamMembers:', err);
+      console.error('❌ [2] Error in fetchTeamMembers:', err);
       return [];
     }
   };
@@ -156,17 +149,15 @@ export const useTeamData = (slug?: string) => {
   const fetchData = async () => {
     setLoading(true);
     setError(null);
-
     try {
-      // Step 1: Get the Teams
+      console.log('🚀 STARTING FETCH for:', slug);
       const teams = await fetchClientTeams();
-      setClientTeams(teams);
-
-      // Step 2: Get the Members (passing the teams we just found)
       const members = await fetchTeamMembers(teams);
+      setClientTeams(teams);
       setTeamMembers(members);
+      console.log('🏁 FETCH COMPLETE. Members count:', members.length);
     } catch (err) {
-      console.error('Error fetching data:', err);
+      console.error('❌ Fatal Error:', err);
       setError('Failed to fetch data');
     } finally {
       setLoading(false);
@@ -177,11 +168,5 @@ export const useTeamData = (slug?: string) => {
     fetchData();
   }, [slug]);
 
-  return {
-    teamMembers,
-    clientTeams,
-    loading,
-    error,
-    refetch: fetchData
-  };
+  return { teamMembers, clientTeams, loading, error, refetch: fetchData };
 };

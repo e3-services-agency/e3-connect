@@ -8,7 +8,7 @@ interface TeamStepProps extends StepProps {
 }
 
 const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateChange, clientTeamFilter }) => {
-  
+
   // --- ADD THESE LOGS ---
   console.log('RENDER TeamStep');
   console.log(' - Filter Prop:', clientTeamFilter);
@@ -17,7 +17,6 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
   // ----------------------
 
   const [error, setError] = useState('');
-  const { teamMembers, loading, error: dataError } = useTeamData(clientTeamFilter);
 
   // --- HELPER: ROBUST FILTER LOGIC ---
   const getFilteredMembers = () => {

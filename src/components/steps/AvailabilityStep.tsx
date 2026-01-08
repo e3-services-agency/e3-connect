@@ -80,9 +80,12 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       if (activeFilter) {
           matchesClient = member.clientTeams.some(team => {
               const normalizedName = team.name.toLowerCase().replace(/ /g, '-');
-              const normalizedSlug = (team as any).slug?.toLowerCase(); 
+              const bookingSlug = (team as any).booking_slug?.toLowerCase();
+              const oldSlug = (team as any).slug?.toLowerCase(); // Keep as fallback if needed
+
               return team.id === activeFilter || 
-                     normalizedSlug === activeFilter || 
+                     bookingSlug === activeFilter || 
+                     oldSlug === activeFilter ||
                      normalizedName === activeFilter;
           });
       }

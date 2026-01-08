@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { StepProps } from '../../types/scheduling';
 import { useTeamData } from '../../hooks/useTeamData';
 import { GoogleCalendarService } from '../../utils/googleCalendarService';
@@ -13,8 +13,17 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
   const [showDescription, setShowDescription] = useState(false);
   const [meetingData, setMeetingData] = useState<any>(null);
   
-  // Resolve team members based on UUIDs from state
-  const { teamMembers } = useTeamData();
+  // FIX: Resolve the filter from URL so useTeamData finds the right members
+  const activeFilter = useMemo(() => {
+    const pathParts = window.location.pathname.split('/');
+    const bookIndex = pathParts.indexOf('book');
+    return bookIndex !== -1 ? pathParts[bookIndex + 1] : undefined;
+  }, []);
+
+  // Use the filter to ensure teamMembers isn't empty
+  const { teamMembers, loading } = useTeamData(activeFilter);
+  
+  // Map UUIDs from state back to full member objects
   const requiredTeam = teamMembers.filter(m => appState.requiredMembers.has(m.id));
   const optionalTeam = teamMembers.filter(m => appState.optionalMembers.has(m.id));
 
@@ -49,7 +58,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
   const [sessionDescription, setSessionDescription] = useState(appState.bookingDescription || '');
 
   const confirmBooking = async () => {
-    // Validate required fields
     if (!appState.selectedTime || !appState.selectedDate || !sessionTopic.trim()) {
       if (!sessionTopic.trim()) {
         toast.error('Please add a topic for the meeting');
@@ -72,7 +80,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       const meetingDuration = appState.duration || 30;
       const endTime = new Date(startTime.getTime() + meetingDuration * 60000);
 
-      // Prepare attendee emails (Resolving UUIDs from state to emails)
       const emailSet = new Set<string>();
       requiredTeam.forEach(m => { if(m.email) emailSet.add(m.email.toLowerCase()) });
       optionalTeam.forEach(m => { if(m.email) emailSet.add(m.email.toLowerCase()) });
@@ -90,7 +97,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       const meetingTitle = `💼 ${sessionTitle.trim()} – ${sessionTopic.trim()}`;
       const meetingDescription = `${sessionTopic.trim()}\n\n${sessionDescription.trim()}`;
 
-      // Save meeting to database
       const { data: meeting, error: dbError } = await (supabase as any)
         .from('meetings')
         .insert({
@@ -111,7 +117,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       const currentUrl = window.location.href;
       const bookingSystemLink = `<a href="${currentUrl}">E3 Connect Booking System</a>`;
 
-      // Formatted calendar event description (Restored from your images)
       let calendarDescription = `📌 <b>Session Details</b><br>`;
       calendarDescription += `Topic: ${sessionTopic}<br>`;
       if (sessionDescription.trim()) {
@@ -183,6 +188,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
     });
   };
 
+  if (loading) return <div className="p-8 text-center text-e3-white/60">Loading meeting details...</div>; // Prevent empty state flashes
   if (!appState.selectedTime) return null;
 
   const selectedTime = new Date(appState.selectedTime);
@@ -216,7 +222,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
         </h2>
         <p className="text-e3-white/80 mb-6">Your meeting has been scheduled and calendar invites have been sent to all attendees.</p>
         
-        {/* Success Google Meet Link UI (Restored Icon and Paragraph) */}
         {meetingData?.google_meet_link && (
           <div className="bg-e3-emerald/10 border border-e3-emerald/30 rounded-lg p-4 mb-6">
             <div className="flex items-center justify-center gap-2 mb-2">

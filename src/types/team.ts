@@ -58,3 +58,16 @@ export interface Meeting {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface SafeTeamMember {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  google_photo_url: string | null;
+  clientTeams: {
+    id: string;
+    name: string;
+    booking_slug: string;
+  }[];
+}

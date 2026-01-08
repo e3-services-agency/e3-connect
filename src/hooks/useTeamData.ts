@@ -8,17 +8,20 @@ export const useTeamData = (slug?: string) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 1. Fetch Team Definitions
   const fetchClientTeams = async () => {
     try {
       let data;
       
       if (slug) {
-        // Secure RPC
+        // ✅ SECURE PATH: Public Booking Page
+        // Fetches ONLY the single team matching the slug
         const result = await (supabase as any)
           .rpc('get_client_team_by_slug', { slug_param: slug });
         data = result.data;
       } else {
-        // Admin Fetch
+        // ⚠️ ADMIN PATH: Internal Dashboard
+        // Fetches ALL active teams
         const result = await (supabase as any)
           .from('client_teams')
           .select('*')
@@ -42,29 +45,41 @@ export const useTeamData = (slug?: string) => {
     }
   };
 
+  // 2. Fetch Team Members
   const fetchTeamMembers = async (currentTeams: ClientTeam[]) => {
     try {
       if (slug) {
-        // ✅ SECURE PUBLIC FETCH
+        // ✅ SECURE PATH: Public Booking Page
+        // Fetches only public-safe member data for this specific slug
         const { data, error } = await (supabase as any)
           .rpc('get_public_team_members_by_slug', { slug_param: slug });
 
         if (error) throw error;
         
-        // Find the team object that matches the slug to satisfy UI requirements
-        const activeTeam = currentTeams.find(t => t.booking_slug === slug);
-        const teamArray = activeTeam ? [activeTeam] : [];
+        // --- ROBUSTNESS FIX ---
+        // Ensure we always have a valid team object to attach to the member.
+        // This guarantees the UI filter (TeamStep.tsx) allows the member to be seen.
+        const activeTeam = currentTeams.find(t => t.booking_slug === slug) || {
+            id: 'virtual-team-id', 
+            name: slug.charAt(0).toUpperCase() + slug.slice(1), // Capitalize for display
+            booking_slug: slug, // CRITICAL: Matches the filter in TeamStep
+            description: null,
+            isActive: true,
+            createdAt: null,
+            updatedAt: null
+        };
 
         return (data || []).map((member: any) => ({
           id: member.id,
           name: member.name,
           email: member.email,
           role: member.role_name,
-          clientTeams: teamArray, // Only attach the current team
+          // Attach the team so the UI knows this member belongs here
+          clientTeams: [activeTeam], 
           googleCalendarConnected: true, 
           google_photo_url: member.google_photo_url,
           isActive: member.is_active,
-          // Hide sensitive data
+          // Explicitly nullify sensitive admin fields
           googleCalendarId: null,
           google_profile_data: null,
           createdAt: null,
@@ -72,13 +87,14 @@ export const useTeamData = (slug?: string) => {
         }));
       } 
       
-      // ⚠️ ADMIN FETCH (Keep existing logic)
+      // ⚠️ ADMIN PATH: Internal Dashboard (Existing Logic)
       const { data: membersData, error: membersError } = await (supabase as any)
         .rpc('get_team_members_with_roles');
 
       if (membersError) throw membersError;
       if (!membersData) return [];
 
+      // Fetch relationships for admin view
       const memberIds = membersData.map((member: any) => member.id);
       const { data: relationshipsData } = await (supabase as any)
         .from('team_member_client_teams')

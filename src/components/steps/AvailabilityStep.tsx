@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Calendar, Clock, ChevronLeft, ChevronRight, X, Trash2, GripHorizontal, Loader } from 'lucide-react'; // Added Loader
+import { Calendar, Clock, ChevronLeft, ChevronRight, X, Trash2, GripHorizontal, Loader } from 'lucide-react';
 import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
 import { useTeamData } from '../../hooks/useTeamData';
 import { supabase } from '../../integrations/supabase/client';
@@ -47,11 +47,12 @@ const MEMBER_COLORS: MemberColor[] = [
 ];
 
 const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, onBack, onStateChange, clientTeamFilter }) => {
-  // 1. DETERMINE ACTIVE FILTER (Important: Do this BEFORE calling hooks)
+  
+  // 1. DETERMINE ACTIVE FILTER (Slug or UUID)
   const activeFilter = useMemo(() => {
     if (clientTeamFilter) return clientTeamFilter;
     
-    // Fallback: Try to grab slug from URL if prop is missing
+    // Fallback: Parse URL manually
     const pathParts = window.location.pathname.split('/');
     const bookIndex = pathParts.indexOf('book');
     if (bookIndex !== -1 && pathParts[bookIndex + 1]) {
@@ -60,9 +61,34 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     return undefined;
   }, [clientTeamFilter]);
 
-  // 2. HOOKS (Pass the filter!)
+  // 2. FETCH MEMBERS (Works with Slug OR UUID)
   const { teamMembers, loading: membersLoading } = useTeamData(activeFilter);
-  const { getWorkingHoursForDate, isWorkingDay } = useBusinessHours(activeFilter);
+
+  // 3. RESOLVE TEAM UUID (Critical Fix)
+  // We need the UUID for the business_hours table. If activeFilter is "sunday", 
+  // we extract the real ID (d828...) from the loaded team data.
+  const resolvedTeamId = useMemo(() => {
+    if (!activeFilter) return undefined;
+
+    // Check if activeFilter is ALREADY a UUID
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeFilter);
+    if (isUUID) return activeFilter;
+
+    // If it is a Slug, find the UUID in the loaded data
+    if (teamMembers.length > 0) {
+       // Look at the first member's clientTeams to find the matching ID
+       const team = teamMembers[0].clientTeams.find(t => 
+         t.booking_slug === activeFilter || 
+         t.name.toLowerCase().replace(/ /g, '-') === activeFilter
+       );
+       return team?.id || teamMembers[0].clientTeams[0].id;
+    }
+    
+    return undefined; // Waiting for data to load
+  }, [activeFilter, teamMembers]);
+
+  // 4. FETCH BUSINESS HOURS (Now using the UUID)
+  const { getWorkingHoursForDate, isWorkingDay } = useBusinessHours(resolvedTeamId);
 
   // --- STATE ---
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
@@ -76,14 +102,12 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   
   const hasInitialized = useRef(false);
 
-  // 3. SIMPLIFIED MEMBER FILTERING
-  // The hook now returns *only* valid members for this client. 
-  // We just need to make sure they have an email for Calendar checks.
+  // 5. SIMPLIFIED MEMBER FILTERING
   const connectedMembers = useMemo(() => {
     return teamMembers.filter(member => !!member.email);
   }, [teamMembers]);
 
-  // 4. INITIALIZATION (Parse URL Params)
+  // 6. INITIALIZATION LOGIC
   useEffect(() => {
     if (membersLoading || connectedMembers.length === 0) return;
     if (hasInitialized.current) return;
@@ -112,10 +136,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         });
       }
     } else if (appState.requiredMembers.size === 0 && appState.optionalMembers.size === 0) {
-      // Default: Everyone is required if no selection made
       connectedMembers.forEach(m => newRequired.add(m.id));
     } else {
-      // If state already exists (e.g. from previous step), respect it
       hasInitialized.current = true;
       return;
     }
@@ -126,7 +148,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     hasInitialized.current = true;
   }, [connectedMembers, membersLoading, appState.requiredMembers, appState.optionalMembers, onStateChange]);
 
-  // 5. URL SYNC
+  // 7. URL SYNC
   useEffect(() => {
     if (!hasInitialized.current) return;
 
@@ -154,7 +176,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   }, [appState.requiredMembers, appState.optionalMembers, connectedMembers]);
 
-  // 6. SELECTED MEMBERS LOGIC
+  // 8. SELECTED MEMBERS LOGIC
   const selectedMembers = useMemo(() => {
     const requiredMembers = Array.from(appState.requiredMembers)
       .map(memberId => connectedMembers.find(m => m.id === memberId))
@@ -257,7 +279,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         }
         setMonthlyBusySchedule(memberBusySchedules);
       } catch {
-        // Silent fail for availability check, assume busy only if we can prove it
         setMonthlyBusySchedule({});
       } finally {
         setLoading(false);
@@ -293,7 +314,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     
     let effectiveStart = new Date(workingStart);
     
-    // If today, ensure we respect the minimum notice period AND round to a clean time
     if (startOfDay.toDateString() === now.toDateString() && effectiveStart < minDateTime) {
       effectiveStart = new Date(minDateTime);
       const minutes = effectiveStart.getMinutes();
@@ -314,7 +334,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       const requiredMembersAvailable: string[] = [];
       let allRequiredAvailable = true;
       
-      // Check Required
       for (const email of selectedMemberEmails.required) {
         const memberBusySlots = monthlyBusySchedule[email] || [];
         const hasConflict = memberBusySlots.some(busySlot => {
@@ -331,7 +350,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       }
       
       if (allRequiredAvailable) {
-        // Check Optional
         const optionalMembersAvailable: string[] = [];
         for (const member of selectedMembers.optional) {
           const memberBusySlots = monthlyBusySchedule[member.email] || [];
@@ -486,7 +504,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     );
   }
 
-  // Fallback if no members are loaded (unlikely with activeFilter logic)
   if (connectedMembers.length === 0) {
      return <div className="text-center py-12 text-e3-white/60">No members found for this team.</div>;
   }
@@ -495,7 +512,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   return (
     <div className="flex flex-col h-full gap-4">
-      {/* 1. FLEX HEADER - Widened Pool */}
+      {/* 1. FLEX HEADER */}
       <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-2 flex-none">
         
         {/* Left: Title */}
@@ -507,7 +524,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
           </div>
         </div>
 
-        {/* Right: Pool Zone (Fills remaining space) */}
+        {/* Right: Pool Zone */}
         <div className="flex-grow min-w-0 w-full md:w-auto">
             {selectedMembers.pool.length > 0 && (
                 <div 
@@ -542,7 +559,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                                     {m.name.charAt(0)}
                                   </div>
                                 )}
-                                {/* Fallback Initial if Image Fails */}
                                 {m.google_photo_url && (
                                   <div className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[8px] hidden">
                                     {m.name.charAt(0)}
@@ -711,7 +727,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                 const isWorkDay = isWorkingDay(date);
                 const isPast = date < new Date() && !isSameDay(date, new Date());
                 
-                // Get pre-calculated available members for this day
                 const dateStr = format(date, 'yyyy-MM-dd');
                 const freeMembersForDay = dailyAvailabilityMap.get(dateStr) || new Set();
                 const hasAvailability = freeMembersForDay.size > 0;
@@ -751,7 +766,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             </div>
           </div>
 
-          {/* SLOTS - COMPACT & NO SCROLLBAR */}
+          {/* SLOTS */}
           <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
             <div className="flex flex-col gap-3 mb-4 flex-none border-b border-e3-white/5 pb-3">
               <div className="flex items-center justify-between">
@@ -778,7 +793,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
             <div className="flex-grow relative overflow-hidden min-h-[200px]">
                {!selectedDate ? (
-                  
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-e3-white/30">
                     <Calendar className="w-8 h-8 mb-2 opacity-20" />
                     <p className="text-xs">Select a date on the left</p>

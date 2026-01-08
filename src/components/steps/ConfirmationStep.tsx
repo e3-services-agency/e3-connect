@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { StepProps } from '../../types/scheduling';
 import { useTeamData } from '../../hooks/useTeamData';
@@ -13,7 +12,11 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
   const [isBooking, setIsBooking] = useState(false);
   const [showDescription, setShowDescription] = useState(false);
   const [meetingData, setMeetingData] = useState<any>(null);
+  
+  // Resolve team members based on UUIDs from state
   const { teamMembers } = useTeamData();
+  const requiredTeam = teamMembers.filter(m => appState.requiredMembers.has(m.id));
+  const optionalTeam = teamMembers.filter(m => appState.optionalMembers.has(m.id));
 
   // Local state for editing booking details
   const [sessionTitle, setSessionTitle] = useState(() => {
@@ -24,7 +27,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       const path = window.location.pathname;
       const slug = path.split('/').pop();
       
-      // Map URL slugs to proper client team names
       const slugToNameMap: Record<string, string> = {
         'atr': 'ATR',
         'puig': 'PUIG', 
@@ -32,13 +34,8 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
         'sn': 'Sunday Natural'
       };
       
-      // First try to get name from slug mapping
-      if (slug && slugToNameMap[slug]) {
-        return slugToNameMap[slug];
-      }
+      if (slug && slugToNameMap[slug]) return slugToNameMap[slug];
       
-      // Try to get from team members' client teams
-      const requiredTeam = teamMembers.filter(m => appState.requiredMembers.has(m.id));
       if (requiredTeam.length > 0 && requiredTeam[0]?.clientTeams?.[0]?.name) {
         return requiredTeam[0].clientTeams[0].name;
       }
@@ -53,7 +50,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
   const [sessionDescription, setSessionDescription] = useState(appState.bookingDescription || '');
 
   const confirmBooking = async () => {
-    // 1. Validation
     if (!appState.selectedTime || !appState.selectedDate || !sessionTopic.trim()) {
       if (!sessionTopic.trim()) {
         toast.error('Please add a topic for the meeting');
@@ -63,53 +59,48 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       return;
     }
 
+    if (requiredTeam.length === 0) {
+      toast.error("No required team members found. Please go back and re-select your team.");
+      return;
+    }
+
     setIsBooking(true);
     
     try {
-      // 2. Setup Timezone and Times
       const userTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
       const startTime = new Date(appState.selectedTime);
       const meetingDuration = appState.duration || 30;
       const endTime = new Date(startTime.getTime() + meetingDuration * 60000);
 
-      // 3. ROBUST MEMBER LOOKUP (Fixes the UUID vs Email mismatch)
-      // Filter the teamMembers array using the UUID Sets from appState
-      const requiredMembers = teamMembers.filter(m => appState.requiredMembers.has(m.id));
-      const optionalMembers = teamMembers.filter(m => appState.optionalMembers.has(m.id));
-
-      if (requiredMembers.length === 0) {
-        throw new Error("No required team members found. Please ensure team members are selected.");
-      }
-
-      // 4. PREPARE ATTENDEE EMAILS (Unique Set)
+      // Prepare attendee emails (UUIDs -> Emails)
       const emailSet = new Set<string>();
       
-      // Add all identified team members
-      requiredMembers.forEach(m => { if(m.email) emailSet.add(m.email.toLowerCase()) });
-      optionalMembers.forEach(m => { if(m.email) emailSet.add(m.email.toLowerCase()) });
+      // Add Team Emails
+      requiredTeam.forEach(m => { if(m.email) emailSet.add(m.email.toLowerCase()) });
+      optionalTeam.forEach(m => { if(m.email) emailSet.add(m.email.toLowerCase()) });
       
-      // Add guest emails from InviteStep
-      const guestEmailsArray = Array.isArray(appState.guestEmails) ? appState.guestEmails : [];
-      guestEmailsArray.forEach(email => emailSet.add(email.toLowerCase()));
-
-      // Add booker email from BookerInfoStep
+      // Add Booker Email
       if (appState.bookerEmail) {
         emailSet.add(appState.bookerEmail.toLowerCase());
       }
+      
+      // Add External Guest Emails
+      const guestEmailsArray = Array.isArray(appState.guestEmails) ? appState.guestEmails : [];
+      guestEmailsArray.forEach(email => emailSet.add(email.toLowerCase()));
 
       const attendeeEmails = Array.from(emailSet);
+      const organizerEmail = requiredTeam[0].email || 'admin@e3-services.com';
 
-      // 5. Prepare Metadata
+      // Use the current session title and description
       const meetingTitle = `💼 ${sessionTitle.trim()} – ${sessionTopic.trim()}`;
-      const meetingDescription = `${sessionTopic.trim()}\n\n${sessionDescription.trim()}`;
-      const organizerEmail = requiredMembers[0].email || 'admin@e3-services.com';
+      const meetingDescriptionBase = `${sessionTopic.trim()}\n\n${sessionDescription.trim()}`;
 
-      // 6. Save to Database
+      // Save meeting to database
       const { data: meeting, error: dbError } = await (supabase as any)
         .from('meetings')
         .insert({
           title: meetingTitle,
-          description: meetingDescription,
+          description: meetingDescriptionBase,
           start_time: startTime.toISOString(),
           end_time: endTime.toISOString(),
           organizer_email: organizerEmail,
@@ -120,12 +111,12 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
         .select()
         .single();
 
-      if (dbError) throw dbError;
+      if (dbError) throw new Error('Failed to save meeting to database');
 
-      // 7. Create Calendar Event
       const currentUrl = window.location.href;
       const bookingSystemLink = `<a href="${currentUrl}">E3 Connect Booking System</a>`;
 
+      // Create formatted calendar event description
       let calendarDescription = `📌 <b>Session Details</b><br>`;
       calendarDescription += `Topic: ${sessionTopic}<br>`;
       if (sessionDescription.trim()) {
@@ -135,23 +126,28 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       calendarDescription += `🗓️ <b>Scheduling Details</b><br>`;
       calendarDescription += `Scheduled via: ${bookingSystemLink}<br>`;
       calendarDescription += `Booked by: ${appState.bookerEmail || 'N/A'}<br>`;
-      calendarDescription += `Required Attendee(s): ${requiredMembers.map(m => m.name).join(', ')}<br>`;
-      
-      if (optionalMembers.length > 0) {
-        calendarDescription += `Optional Attendee(s): ${optionalMembers.map(m => m.name).join(', ')}<br>`;
+      calendarDescription += `Required Attendee(s): ${requiredTeam.map(m => m.name).join(', ')}<br>`;
+      if (optionalTeam.length > 0) {
+        calendarDescription += `Optional Attendee(s): ${optionalTeam.map(m => m.name).join(', ')}<br>`;
       }
 
+      // Create calendar event
       const eventData = {
         summary: meetingTitle,
         description: calendarDescription,
-        start: { dateTime: startTime.toISOString(), timeZone: userTimezone },
-        end: { dateTime: endTime.toISOString(), timeZone: userTimezone },
+        start: {
+          dateTime: startTime.toISOString(),
+          timeZone: userTimezone
+        },
+        end: {
+          dateTime: endTime.toISOString(),
+          timeZone: userTimezone
+        },
         attendees: attendeeEmails.map(email => ({ email }))
       };
 
       const calendarResult = await GoogleCalendarService.createEvent(organizerEmail, eventData);
 
-      // 8. Handle Calendar Success & Meet Link
       let finalMeetingData = meeting;
       if (calendarResult?.event?.id) {
         const meetLink = calendarResult.event.conferenceData?.entryPoints?.find(
@@ -172,7 +168,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       }
 
       setMeetingData(finalMeetingData);
-      toast.success('Meeting booked successfully!');
+      toast.success('Meeting booked successfully! Calendar invites have been sent.');
       setIsBooked(true);
     } catch (error) {
       console.error('Error booking meeting:', error);
@@ -181,6 +177,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       setIsBooking(false);
     }
   };
+  
 
   const resetFlow = () => {
     onStateChange({
@@ -219,23 +216,13 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
   const selectedTime = new Date(appState.selectedTime);
   const userTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   
-  console.log('=== CONFIRMATION STEP DEBUG ===');
-  console.log('Selected time from state:', appState.selectedTime);
-  console.log('Selected date from state:', appState.selectedDate);
-  console.log('User timezone:', userTimezone);
-  console.log('Duration from state:', appState.duration);
-  console.log('Parsed selected time:', selectedTime.toISOString());
-  console.log('Selected time in user TZ:', selectedTime.toLocaleString("en-US", {timeZone: userTimezone}));
-  
-  // FIXED: Force 24-hour format for time display consistently
   const timeString = selectedTime.toLocaleTimeString([], { 
     hour: '2-digit', 
     minute: '2-digit',
-    hour12: false, // Force 24-hour format
+    hour12: false, 
     timeZone: userTimezone
   });
   
-  // CRITICAL FIX: Use the selected time itself for date, don't rely on selectedDate string
   const dateString = selectedTime.toLocaleDateString([], { 
     weekday: 'long', 
     year: 'numeric', 
@@ -244,14 +231,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
     timeZone: userTimezone
   });
   
-  console.log('Formatted date string:', dateString);
-  console.log('Formatted time string:', timeString);
-  
-  // Get selected team members
-  const requiredTeam = teamMembers.filter(m => appState.requiredMembers.has(m.id));
-  const optionalTeam = teamMembers.filter(m => appState.optionalMembers.has(m.id));
-
-  // FIXED: Ensure duration is properly displayed with fallback
   const meetingDuration = appState.duration || 30;
 
   if (isBooked) {
@@ -265,7 +244,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
         </h2>
         <p className="text-e3-white/80 mb-6">Your meeting has been scheduled and calendar invites have been sent to all attendees.</p>
         
-        {/* Google Meet Link */}
         {meetingData?.google_meet_link && (
           <div className="bg-e3-emerald/10 border border-e3-emerald/30 rounded-lg p-4 mb-6">
             <div className="flex items-center justify-center gap-2 mb-2">
@@ -288,7 +266,6 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
           </div>
         )}
         
-        {/* Improved Success Summary with Better Layout */}
         <div className="bg-e3-space-blue/30 rounded-lg p-6 mb-6 text-left border border-e3-emerald/20">
           <h3 className="text-lg font-semibold text-e3-emerald mb-4 text-center">Booking Summary</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-y-3 gap-x-6 text-sm">

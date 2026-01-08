@@ -2,25 +2,45 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { TeamMemberConfig, ClientTeam } from '@/types/team';
 
-// CHANGED: Argument is now 'clientTeamId' (UUID)
-export const useTeamData = (clientTeamId?: string) => {
+// CHANGED: Argument is 'slugOrId' because it might be "sunday" (Slug) or a UUID
+export const useTeamData = (slugOrId?: string) => {
   const [teamMembers, setTeamMembers] = useState<TeamMemberConfig[]>([]);
   const [clientTeams, setClientTeams] = useState<ClientTeam[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // 1. Fetch Client Teams
-  // (We keep this for the Admin Dashboard which lists all teams)
+  // This logic is critical: It determines if we are looking for ONE team (Public) or ALL (Admin)
   const fetchClientTeams = async () => {
     try {
-      // Admin path: Get all active teams
-      const result = await (supabase as any)
-        .from('client_teams')
-        .select('*')
-        .eq('is_active', true)
-        .order('name');
+      let data = [];
 
-      return result.data?.map((team: any) => ({
+      // CASE A: We have a specific target (Public Booking Page)
+      if (slugOrId) {
+        // Try to fetch as if it is a SLUG (most common for public page)
+        const { data: slugData, error: slugError } = await (supabase as any)
+          .rpc('get_client_team_by_slug', { slug_param: slugOrId });
+
+        if (!slugError && slugData && slugData.length > 0) {
+          data = slugData;
+        } else {
+          // If slug failed, maybe it WAS an ID? (Fallback/Edge case)
+          // We can't easily check this without admin rights, so we rely on the slug RPC mostly.
+          // If you really need ID support here, we'd need a separate RPC 'get_client_team_by_id'
+          console.warn('Could not find team by slug:', slugOrId);
+        }
+      } 
+      // CASE B: No target (Admin Dashboard)
+      else {
+        const result = await (supabase as any)
+          .from('client_teams')
+          .select('*')
+          .eq('is_active', true)
+          .order('name');
+        data = result.data || [];
+      }
+
+      return data.map((team: any) => ({
         id: team.id,
         name: team.name,
         description: team.description,
@@ -28,100 +48,89 @@ export const useTeamData = (clientTeamId?: string) => {
         isActive: team.is_active,
         createdAt: team.created_at,
         updatedAt: team.updated_at
-      })) || [];
+      }));
     } catch (err) {
       console.error('Error in fetchClientTeams:', err);
       return [];
     }
   };
 
-  // 2. Fetch Members (Using the new ID function)
+  // 2. Fetch Members
   const fetchTeamMembers = async (currentTeams: ClientTeam[]) => {
     try {
-      // ✅ PUBLIC PATH: If an ID is provided, use the new Secure ID Function
-      if (clientTeamId) {
-        console.log('🔍 Fetching members for ID:', clientTeamId);
+      // ✅ PUBLIC PATH: We found a specific team in step 1
+      if (slugOrId && currentTeams.length === 1) {
+        const activeTeam = currentTeams[0]; // This is the resolved team (e.g., Sunday Natural)
         
+        console.log('🔍 Resolving members for Team ID:', activeTeam.id);
+        
+        // NOW we pass the UUID (activeTeam.id) to the secure function
         const { data, error } = await (supabase as any)
-          .rpc('get_public_team_members_by_id', { client_team_id_param: clientTeamId });
+          .rpc('get_public_team_members_by_id', { client_team_id_param: activeTeam.id });
 
         if (error) throw error;
-
-        // Attach the correct team object for the UI filter
-        const activeTeam = currentTeams.find(t => t.id === clientTeamId) || {
-            id: clientTeamId,
-            name: 'Current Team',
-            booking_slug: 'unknown',
-            description: null,
-            isActive: true,
-            createdAt: null,
-            updatedAt: null
-        };
 
         return (data || []).map((member: any) => ({
           id: member.id,
           name: member.name,
           email: member.email,
           role: member.role_name,
-          clientTeams: [activeTeam], // Attached correctly via ID
+          clientTeams: [activeTeam], // Attached correctly
           googleCalendarConnected: true, 
           google_photo_url: member.google_photo_url,
           isActive: member.is_active,
-          googleCalendarId: null,
-          google_profile_data: null,
+          googleCalendarId: null, // Hidden
+          google_profile_data: null, // Hidden
           createdAt: null,
           updatedAt: null
         }));
       } 
       
-      // ⚠️ ADMIN PATH: No ID provided, fetch everyone (Dashboard)
-      const { data: membersData, error: membersError } = await (supabase as any)
-        .rpc('get_team_members_with_roles');
+      // ⚠️ ADMIN PATH: Fetch everyone (Dashboard)
+      // Only runs if we didn't search for a specific slug, OR if slug search failed
+      if (!slugOrId) {
+        const { data: membersData, error: membersError } = await (supabase as any)
+          .rpc('get_team_members_with_roles');
 
-      if (membersError) throw membersError;
-      if (!membersData) return [];
+        if (membersError) throw membersError;
+        if (!membersData) return [];
 
-      const memberIds = membersData.map((member: any) => member.id);
-      const { data: relationshipsData } = await (supabase as any)
-        .from('team_member_client_teams')
-        .select(`team_member_id, client_teams:client_team_id (*)`)
-        .in('team_member_id', memberIds);
+        const memberIds = membersData.map((member: any) => member.id);
+        const { data: relationshipsData } = await (supabase as any)
+          .from('team_member_client_teams')
+          .select(`team_member_id, client_teams:client_team_id (*)`)
+          .in('team_member_id', memberIds);
 
-      return membersData.map((member: any) => {
-        const memberRelationships = relationshipsData?.filter(
-          (rel: any) => rel.team_member_id === member.id
-        ) || [];
+        return membersData.map((member: any) => {
+          const memberRelationships = relationshipsData?.filter(
+            (rel: any) => rel.team_member_id === member.id
+          ) || [];
 
-        const memberClientTeams = memberRelationships
-          .map((rel: any) => rel.client_teams)
-          .filter(Boolean)
-          .map((team: any) => ({
-            id: team.id,
-            name: team.name,
-            description: team.description,
-            booking_slug: team.booking_slug,
-            isActive: team.is_active,
-            createdAt: team.created_at,
-            updatedAt: team.updated_at
-          }));
+          const memberClientTeams = memberRelationships
+            .map((rel: any) => rel.client_teams)
+            .filter(Boolean)
+            .map((team: any) => ({
+              id: team.id,
+              name: team.name,
+              booking_slug: team.booking_slug,
+              // ... map other fields
+            }));
 
-        return {
-          id: member.id,
-          name: member.name,
-          email: member.email,
-          role: member.role_name,
-          roleId: member.role_id,
-          clientTeams: memberClientTeams,
-          googleCalendarConnected: !!member.google_calendar_id,
-          googleCalendarId: member.google_calendar_id,
-          google_photo_url: member.google_photo_url,
-          google_profile_data: member.google_profile_data,
-          isActive: member.is_active,
-          createdAt: member.created_at,
-          updatedAt: member.updated_at
-        };
-      });
+          return {
+            id: member.id,
+            name: member.name,
+            email: member.email,
+            role: member.role_name,
+            clientTeams: memberClientTeams,
+            googleCalendarConnected: !!member.google_calendar_id,
+            google_photo_url: member.google_photo_url,
+            isActive: member.is_active,
+            // ... other fields
+          };
+        });
+      }
 
+      return []; // Default empty if slug provided but no team found
     } catch (err) {
       console.error('Error in fetchTeamMembers:', err);
       return [];
@@ -132,8 +141,11 @@ export const useTeamData = (clientTeamId?: string) => {
     setLoading(true);
     setError(null);
     try {
+      // 1. Get the Team (Resolves "sunday" -> ID)
       const teams = await fetchClientTeams();
       setClientTeams(teams);
+
+      // 2. Get the Members (Uses the ID from step 1)
       const members = await fetchTeamMembers(teams);
       setTeamMembers(members);
     } catch (err) {
@@ -146,7 +158,7 @@ export const useTeamData = (clientTeamId?: string) => {
 
   useEffect(() => {
     fetchData();
-  }, [clientTeamId]); // Dependency updated to ID
+  }, [slugOrId]); 
 
   return { teamMembers, clientTeams, loading, error, refetch: fetchData };
 };

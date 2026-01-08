@@ -467,6 +467,18 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     );
   };
 
+  const handleBack = () => {
+    // Clean the URL to prevent infinite loop when landing on Team Step
+    const params = new URLSearchParams(window.location.search);
+    params.delete('step'); 
+    
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState({}, '', newUrl);
+    
+    // Navigate back
+    onBack();
+  };
+
   if (membersLoading) return <div className="text-center py-12 text-e3-white/60">Loading team...</div>;
   if (connectedMembers.length === 0) return <div className="text-center py-12 text-e3-white/60">No connected team members found.</div>;
 
@@ -824,7 +836,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       </div>
 
       <div className="flex flex-col sm:flex-row justify-between gap-4 mt-2 flex-none pt-4 border-t border-e3-white/10">
-        <button onClick={onBack} className="order-2 sm:order-1 py-2.5 px-6 text-sm text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40">
+        <button onClick={handleBack} className="order-2 sm:order-1 py-2.5 px-6 text-sm text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40">
           Back
         </button>
         <button onClick={onNext} disabled={!appState.selectedDate || !appState.selectedTime} className="order-1 sm:order-2 cta py-2.5 px-8 text-sm disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-e3-emerald/20">

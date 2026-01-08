@@ -1,3 +1,4 @@
+// useBusinessHours.ts
 import { useState, useEffect } from 'react';
 import { supabase } from '../integrations/supabase/client';
 
@@ -75,40 +76,36 @@ export const useBusinessHours = (clientTeamId?: string) => {
 
       let effectiveHours: BusinessHours | ClientTeamBusinessHours | null = null;
 
-      // First, try to get client-specific hours if clientTeamId is provided
+      // 1. Try to get CLIENT-SPECIFIC hours first
       if (clientTeamId) {
         const { data: clientHours, error: clientError } = await supabase
           .from('client_team_business_hours')
           .select('*')
           .eq('client_team_id', clientTeamId)
           .eq('is_active', true)
-          .single();
+          .maybeSingle(); // ✅ CHANGED: .single() -> .maybeSingle() to prevent crash
 
-        if (clientError && clientError.code !== 'PGRST116') {
-          throw clientError;
-        }
+        if (clientError) throw clientError;
 
         if (clientHours) {
           effectiveHours = clientHours;
         }
       }
 
-      // If no client-specific hours found, get global hours
+      // 2. If no client hours found, get GLOBAL hours
       if (!effectiveHours) {
         const { data: globalHours, error: globalError } = await supabase
           .from('business_hours')
           .select('*')
           .eq('is_active', true)
-          .single();
+          .maybeSingle(); // ✅ CHANGED: .single() -> .maybeSingle()
 
-        if (globalError && globalError.code !== 'PGRST116') {
-          throw globalError;
-        }
+        if (globalError) throw globalError;
 
         effectiveHours = globalHours;
       }
 
-      // Convert to our expected format
+      // 3. Convert to format or Fallback to Hardcoded Defaults
       if (effectiveHours) {
         const dayHours: DayBusinessHours = {
           monday: { start: effectiveHours.monday_start, end: effectiveHours.monday_end },
@@ -120,10 +117,10 @@ export const useBusinessHours = (clientTeamId?: string) => {
           sunday: { start: effectiveHours.sunday_start, end: effectiveHours.sunday_end },
           timezone: effectiveHours.timezone
         };
-
         setBusinessHours(dayHours);
       } else {
-        // Fallback to default business hours (9 AM - 6 PM, Monday to Friday)
+        // Fallback: 9 AM - 6 PM, Mon-Fri
+        console.warn('No business hours found in DB, using defaults.');
         const defaultHours: DayBusinessHours = {
           monday: { start: '09:00', end: '18:00' },
           tuesday: { start: '09:00', end: '18:00' },
@@ -134,7 +131,6 @@ export const useBusinessHours = (clientTeamId?: string) => {
           sunday: { start: null, end: null },
           timezone: 'UTC'
         };
-
         setBusinessHours(defaultHours);
       }
 
@@ -142,7 +138,7 @@ export const useBusinessHours = (clientTeamId?: string) => {
       console.error('Error loading business hours:', err);
       setError('Failed to load business hours');
       
-      // Fallback to default hours on error
+      // Fallback on error
       const defaultHours: DayBusinessHours = {
         monday: { start: '09:00', end: '18:00' },
         tuesday: { start: '09:00', end: '18:00' },
@@ -153,7 +149,6 @@ export const useBusinessHours = (clientTeamId?: string) => {
         sunday: { start: null, end: null },
         timezone: 'UTC'
       };
-
       setBusinessHours(defaultHours);
     } finally {
       setLoading(false);
@@ -162,16 +157,14 @@ export const useBusinessHours = (clientTeamId?: string) => {
 
   const getWorkingHoursForDate = (date: Date): WorkingHours => {
     if (!businessHours) {
-      return { start: '09:00', end: '18:00' }; // Default fallback
+      return { start: '09:00', end: '18:00' };
     }
 
-    const dayOfWeek = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
+    const dayOfWeek = date.getDay(); // 0 = Sunday
     const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     const dayKey = days[dayOfWeek] as keyof DayBusinessHours;
 
-    if (dayKey === 'timezone') {
-      return { start: '09:00', end: '18:00' }; // Should never happen, but safety check
-    }
+    if (dayKey === 'timezone') return { start: '09:00', end: '18:00' };
 
     return businessHours[dayKey] as WorkingHours;
   };

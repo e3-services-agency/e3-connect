@@ -12,7 +12,6 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
   const { teamMembers, loading, error: dataError } = useTeamData();
 
   // --- HELPER: ROBUST FILTER LOGIC ---
-  // Matches client filter against ID, slug, booking_slug, or name
   const getFilteredMembers = () => {
     if (!clientTeamFilter) return teamMembers;
 
@@ -33,60 +32,63 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
 
   const filteredTeamMembers = getFilteredMembers();
 
-  // --- 1. AUTO-REDIRECT LOGIC (Handle Deep Links) ---
+  // --- 1. INITIALIZATION LOGIC (Parse URL Params) ---
   useEffect(() => {
+    // Wait for team members to load
     if (loading || teamMembers.length === 0) return;
 
     const params = new URLSearchParams(window.location.search);
+    const requiredParam = params.get('required');
+    const optionalParam = params.get('optional');
     const stepParam = params.get('step');
 
-    // Only auto-advance if URL explicitly asks for it
-    if (stepParam === 'availability') {
-      const requiredParam = params.get('required');
-      const optionalParam = params.get('optional');
+    // Helper to find member by email
+    const findMember = (email: string) => 
+      teamMembers.find(m => m.email.toLowerCase() === email.trim().toLowerCase());
 
-      const newRequired = new Set<string>();
-      const newOptional = new Set<string>();
+    const newRequired = new Set<string>();
+    const newOptional = new Set<string>();
 
-      const findMember = (email: string) => 
-        teamMembers.find(m => m.email.toLowerCase() === email.trim().toLowerCase());
+    // Parse 'required' emails (ALWAYS do this if present)
+    if (requiredParam) {
+      decodeURIComponent(requiredParam).split(',').forEach(email => {
+        const m = findMember(email);
+        if (m) newRequired.add(m.id);
+      });
+    }
 
-      if (requiredParam) {
-        decodeURIComponent(requiredParam).split(',').forEach(email => {
-          const m = findMember(email);
-          if (m) newRequired.add(m.id);
-        });
-      }
+    // Parse 'optional' emails (ALWAYS do this if present)
+    if (optionalParam) {
+      decodeURIComponent(optionalParam).split(',').forEach(email => {
+        const m = findMember(email);
+        if (m && !newRequired.has(m.id)) newOptional.add(m.id);
+      });
+    }
 
-      if (optionalParam) {
-        decodeURIComponent(optionalParam).split(',').forEach(email => {
-          const m = findMember(email);
-          if (m && !newRequired.has(m.id)) newOptional.add(m.id);
-        });
-      }
+    // If we found members in the URL, update the checkbox state
+    if (newRequired.size > 0 || newOptional.size > 0) {
+      onStateChange({
+        requiredMembers: newRequired,
+        optionalMembers: newOptional
+      });
 
-      if (newRequired.size > 0 || newOptional.size > 0) {
-        onStateChange({
-          requiredMembers: newRequired,
-          optionalMembers: newOptional
-        });
-        // Jump to next step, but leave URL intact so it remains shareable
+      // CHECK: Only auto-jump to next step if URL explicitly asks for it
+      if (stepParam === 'availability') {
         onNext(); 
       }
     }
   }, [loading, teamMembers, onNext, onStateChange]);
 
-  // --- 2. URL SYNC LOGIC (Make Team Selection Shareable) ---
-  // Updates the URL as you select people, so you can copy/paste it immediately
+  // --- 2. URL SYNC LOGIC (Update URL when user clicks checkboxes) ---
   useEffect(() => {
     if (loading || teamMembers.length === 0) return;
 
     const params = new URLSearchParams(window.location.search);
     
-    // Don't sync if we are about to auto-jump
+    // Don't sync if we are currently auto-jumping
     if (params.get('step') === 'availability') return;
 
-    // Convert IDs back to emails
+    // Convert IDs back to emails for the URL
     const reqEmails = Array.from(appState.requiredMembers)
       .map(id => teamMembers.find(m => m.id === id)?.email)
       .filter(Boolean)
@@ -194,6 +196,7 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
     <div className="step animate-fade-in" aria-labelledby="step1-heading">
       <h2 id="step1-heading" className="sub-heading mb-6">1. Choose Team Members</h2>
       
+      {/* Select All Checkbox */}
       <div className="mb-4 p-4 bg-e3-space-blue/50 rounded-lg border border-e3-white/10">
         <label className="flex items-center cursor-pointer">
           <input
@@ -213,6 +216,7 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
           return (
             <div key={member.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-e3-space-blue/70 rounded-lg border border-e3-white/10">
               <div className="flex items-center gap-3 flex-1">
+                {/* Profile Photo */}
                 {member.google_photo_url ? (
                   <img 
                     src={member.google_photo_url} 
@@ -249,17 +253,28 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
                             })
                             .slice(0, 3)
                             .map(team => (
-                              <span key={team.id} className="px-2 py-0.5 bg-e3-azure/20 text-e3-azure text-xs rounded-full">
+                              <span
+                                key={team.id}
+                                className="px-2 py-0.5 bg-e3-azure/20 text-e3-azure text-xs rounded-full"
+                              >
                                 {team.name}
                               </span>
                             ))
                         ) : (
                           member.clientTeams.slice(0, 3).map(team => (
-                            <span key={team.id} className="px-2 py-0.5 bg-e3-azure/20 text-e3-azure text-xs rounded-full">
+                            <span
+                              key={team.id}
+                              className="px-2 py-0.5 bg-e3-azure/20 text-e3-azure text-xs rounded-full"
+                            >
                               {team.name}
                             </span>
                           ))
                         )}
+                        {!clientTeamFilter && member.clientTeams.length > 3 && (
+                        <span className="px-2 py-0.5 text-e3-white/40 text-xs">
+                          +{member.clientTeams.length - 3} more
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -268,7 +283,9 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
                 <button
                   onClick={() => toggleMember(member.id, 'required')}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    isRequired ? 'bg-emerald-500 text-white border-emerald-500' : 'bg-e3-space-blue border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
+                    isRequired 
+                      ? 'bg-emerald-500 text-white border-emerald-500' 
+                      : 'bg-e3-space-blue border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10'
                   }`}
                 >
                   Required
@@ -276,7 +293,9 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
                 <button
                   onClick={() => toggleMember(member.id, 'optional')}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                    isOptional ? 'bg-blue-500 text-white border-blue-500' : 'bg-e3-space-blue border border-blue-500/30 text-blue-400 hover:bg-blue-500/10'
+                    isOptional 
+                      ? 'bg-blue-500 text-white border-blue-500' 
+                      : 'bg-e3-space-blue border border-blue-500/30 text-blue-400 hover:bg-blue-500/10'
                   }`}
                 >
                   Optional
@@ -293,6 +312,7 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
         </button>
       </div>
       
+      {/* Sticky CTA for mobile */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-sm border-t border-e3-white/10 sm:hidden z-50">
         <button onClick={confirmTeamSelection} className="w-full cta focusable">
           Find Availability

@@ -8,16 +8,23 @@ export const useTeamData = (slug?: string) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // 1. Fetch Team Definitions
+  // 1. Fetch Client Teams (The "Folder" needed to organize members)
   const fetchClientTeams = async () => {
     try {
       let data;
       
       if (slug) {
         // ✅ SECURE PATH: Public Booking Page
+        // Try to fetch the specific team using the secure function
         const result = await (supabase as any)
           .rpc('get_client_team_by_slug', { slug_param: slug });
+        
         data = result.data;
+        
+        // If RPC fails/is missing, fall back to empty array (we handle this in fetchTeamMembers)
+        if (result.error) {
+          console.warn('Secure team fetch warning:', result.error);
+        }
       } else {
         // ⚠️ ADMIN PATH: Internal Dashboard
         const result = await (supabase as any)
@@ -38,45 +45,50 @@ export const useTeamData = (slug?: string) => {
         updatedAt: team.updated_at
       })) || [];
     } catch (err) {
-      console.error('Error fetching teams:', err);
+      console.error('Error in fetchClientTeams:', err);
       return [];
     }
   };
 
-  // 2. Fetch Team Members (Accepts teams as argument)
+  // 2. Fetch Members (The "People")
   const fetchTeamMembers = async (currentTeams: ClientTeam[]) => {
     try {
+      // --- A. SECURE PUBLIC PATH (Booking Page) ---
       if (slug) {
-        // ✅ SECURE PATH: Public Booking Page
+        // Fetch only public-safe data
         const { data, error } = await (supabase as any)
           .rpc('get_public_team_members_by_slug', { slug_param: slug });
 
-        if (error) throw error;
-        
-        // --- ROBUSTNESS FIX ---
-        // Find the matching team object to attach to the member.
-        // If missing, create a "Virtual Team" so the UI filter still works.
+        if (error) {
+           console.error('Error fetching public members:', error);
+           throw error;
+        }
+
+        // CRITICAL FIX: Ensure we have a valid Team object to attach.
+        // If the fetchClientTeams failed or returned nothing, we create a 
+        // "Virtual Team" so the UI filter (TeamStep.tsx) still accepts the user.
         const activeTeam = currentTeams.find(t => t.booking_slug === slug) || {
             id: 'virtual-team-id', 
-            name: slug.charAt(0).toUpperCase() + slug.slice(1),
-            booking_slug: slug,
+            name: 'Current Team',
+            booking_slug: slug, // This MUST match the prop passed to TeamStep
             description: null,
             isActive: true,
             createdAt: null,
             updatedAt: null
         };
 
+        // Map the DB result to your frontend type
         return (data || []).map((member: any) => ({
           id: member.id,
           name: member.name,
           email: member.email,
           role: member.role_name,
-          // Attach the team so the UI knows this member belongs here
+          // We manually attach the team here so the UI knows they belong
           clientTeams: [activeTeam], 
           googleCalendarConnected: true, 
           google_photo_url: member.google_photo_url,
           isActive: member.is_active,
-          // Explicitly nullify sensitive admin fields
+          // Nullify sensitive admin data
           googleCalendarId: null,
           google_profile_data: null,
           createdAt: null,
@@ -84,20 +96,22 @@ export const useTeamData = (slug?: string) => {
         }));
       } 
       
-      // ⚠️ ADMIN PATH: Internal Dashboard (Full Logic)
+      // --- B. ADMIN PATH (Dashboard) ---
+      // 1. Get all members with roles
       const { data: membersData, error: membersError } = await (supabase as any)
         .rpc('get_team_members_with_roles');
 
       if (membersError) throw membersError;
       if (!membersData) return [];
 
-      // Fetch relationships for admin view
+      // 2. Get the "Join Table" links to see who belongs to which team
       const memberIds = membersData.map((member: any) => member.id);
       const { data: relationshipsData } = await (supabase as any)
         .from('team_member_client_teams')
         .select(`team_member_id, client_teams:client_team_id (*)`)
         .in('team_member_id', memberIds);
 
+      // 3. Combine them
       return membersData.map((member: any) => {
         const memberRelationships = relationshipsData?.filter(
           (rel: any) => rel.team_member_id === member.id
@@ -134,7 +148,7 @@ export const useTeamData = (slug?: string) => {
       });
 
     } catch (err) {
-      console.error('Error fetching members:', err);
+      console.error('Error in fetchTeamMembers:', err);
       return [];
     }
   };
@@ -142,12 +156,13 @@ export const useTeamData = (slug?: string) => {
   const fetchData = async () => {
     setLoading(true);
     setError(null);
+
     try {
-      // 1. Fetch Teams FIRST
+      // Step 1: Get the Teams
       const teams = await fetchClientTeams();
       setClientTeams(teams);
 
-      // 2. Pass those teams to the Member fetcher
+      // Step 2: Get the Members (passing the teams we just found)
       const members = await fetchTeamMembers(teams);
       setTeamMembers(members);
     } catch (err) {
@@ -162,5 +177,11 @@ export const useTeamData = (slug?: string) => {
     fetchData();
   }, [slug]);
 
-  return { teamMembers, clientTeams, loading, error, refetch: fetchData };
+  return {
+    teamMembers,
+    clientTeams,
+    loading,
+    error,
+    refetch: fetchData
+  };
 };

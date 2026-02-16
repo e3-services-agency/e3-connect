@@ -18,9 +18,8 @@ const TeamConfig: React.FC = () => {
   const [editingTeam, setEditingTeam] = useState<string | null>(null);
   const [editData, setEditData] = useState<any>(null);
   const [availableRoles, setAvailableRoles] = useState<any[]>([]);
-  const { toast } = useToast();
-  
-  const { teamMembers, clientTeams, loading, error, refetch } = useTeamData();
+  const { toast } = useToast();  
+  const { teamMembers = [], clientTeams = [], loading, error, refetch } = useTeamData() || {};
 
   // Load available roles
   React.useEffect(() => {
@@ -93,7 +92,7 @@ const TeamConfig: React.FC = () => {
       name: member.name,
       role: member.role,
       is_active: member.isActive,
-      clientTeams: member.clientTeams.map((team: any) => team.id)
+      clientTeams: (member.clientTeams || []).map((team: any) => team.id)
     });
   };
 

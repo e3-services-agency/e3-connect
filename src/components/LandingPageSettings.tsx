@@ -131,7 +131,7 @@ const LandingPageSettings = () => {
               id="logo-link"
               value={settings.logo_link}
               onChange={(e) => setSettings({ ...settings, logo_link: e.target.value })}
-              placeholder="https://e3-services.com"
+              placeholder="https://e3-services.com?utnm_source=booking_page&utm_medium=logo&utm_campaign=landing_page"
               className="bg-e3-space-blue/50 border-e3-white/20 text-e3-white"
             />
           </div>

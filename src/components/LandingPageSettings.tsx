@@ -142,7 +142,7 @@ const LandingPageSettings = () => {
               id="footer-copyright"
               value={settings.footer_copyright_text}
               onChange={(e) => setSettings({ ...settings, footer_copyright_text: e.target.value })}
-              placeholder="© 2025 E3 Services. All rights reserved."
+              placeholder="© 2026 E3 Services. All rights reserved."
               className="bg-e3-space-blue/50 border-e3-white/20 text-e3-white"
             />
           </div>
@@ -157,7 +157,7 @@ const LandingPageSettings = () => {
                 <SelectValue placeholder="Select default team" />
               </SelectTrigger>
               <SelectContent className="bg-e3-space-blue border-e3-white/20">
-                {clientTeams.map((team) => (
+                {clientTeams?.map((team) => (
                   <SelectItem key={team.id} value={team.name.toLowerCase().replace(/\s+/g, '-')} className="text-e3-white hover:bg-e3-white/10">
                     {team.name}
                   </SelectItem>

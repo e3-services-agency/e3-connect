@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { X, UserCheck, Loader } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
@@ -59,30 +58,38 @@ const AddMemberForm: React.FC<AddMemberFormProps> = ({ onClose, onSuccess, clien
     setIsSubmitting(true);
 
     try {
-      // User is already validated by being selected from workspace dropdown
-      // No need to re-validate since they came from Google Workspace API
-
-      // Check if user already exists
-      const { data: existingMember } = await (supabase as any)
+      // 1. Check if user already exists
+      // FIX: Used .maybeSingle() instead of .single() to avoid PGRST116 error when 0 rows are found
+      const { data: existingMember, error: existError } = await (supabase as any)
         .from('team_members')
         .select('id')
         .eq('email', selectedUser.primaryEmail)
-        .single();
+        .maybeSingle();
+
+      if (existError) throw existError;
 
       if (existingMember) {
         throw new Error('This team member has already been added');
       }
 
-      // Create team member with Google profile data - only use actual Google photo
+      // 2. Find the UUID for the selected role
+      // FIX: Find the actual role_id from the availableRoles array to satisfy the not-null constraint
+      const selectedRoleData = availableRoles.find(r => r.name === formData.role);
+      if (!selectedRoleData) {
+        throw new Error('Invalid role selected');
+      }
+
+      // 3. Create team member with Google profile data
       const { data: memberData, error: memberError } = await (supabase as any)
         .from('team_members')
         .insert({
           name: selectedUser.name.fullName,
           email: selectedUser.primaryEmail,
-          role: formData.role,
+          role: formData.role, // Kept for legacy compatibility if the column still exists
+          role_id: selectedRoleData.id, // FIX: Added the required role_id
           is_active: true,
-          google_calendar_id: selectedUser.primaryEmail, // Use email as calendar ID for domain delegation
-          google_photo_url: selectedUser.thumbnailPhotoUrl || null, // Only store real Google photo or null
+          google_calendar_id: selectedUser.primaryEmail,
+          google_photo_url: selectedUser.thumbnailPhotoUrl || null,
           google_profile_data: {
             orgUnitPath: selectedUser.orgUnitPath,
             isAdmin: selectedUser.isAdmin,
@@ -95,11 +102,9 @@ const AddMemberForm: React.FC<AddMemberFormProps> = ({ onClose, onSuccess, clien
         .select()
         .single();
 
-      if (memberError) {
-        throw memberError;
-      }
+      if (memberError) throw memberError;
 
-      // Add client team relationships
+      // 4. Add client team relationships
       const teamIds = formData.addToAllTeams ? clientTeams.map(t => t.id) : formData.clientTeamIds;
       
       if (teamIds.length > 0) {
@@ -112,14 +117,12 @@ const AddMemberForm: React.FC<AddMemberFormProps> = ({ onClose, onSuccess, clien
           .from('team_member_client_teams')
           .insert(relationships);
 
-        if (relationshipError) {
-          throw relationshipError;
-        }
+        if (relationshipError) throw relationshipError;
       }
 
       toast({
         title: "Team Member Added",
-        description: `${selectedUser.name.fullName} has been added successfully with Google Calendar access`,
+        description: `${selectedUser.name.fullName} has been added successfully`,
       });
 
       onSuccess();

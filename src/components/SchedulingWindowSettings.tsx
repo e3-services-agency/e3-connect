@@ -289,7 +289,7 @@ const SchedulingWindowSettings: React.FC<SchedulingWindowSettingsProps> = ({ cli
                 disabled={saving}
                 className="border-e3-flame/50 text-e3-flame hover:bg-e3-flame/10"
               >
-                Remove Override
+                Remove Window Override
               </Button>
             )}
             <Button 
@@ -297,7 +297,7 @@ const SchedulingWindowSettings: React.FC<SchedulingWindowSettingsProps> = ({ cli
               disabled={saving}
               className="bg-e3-emerald hover:bg-e3-emerald/90 text-e3-space-blue font-medium"
             >
-              {saving ? 'Saving...' : 'Save Settings'}
+              {saving ? 'Saving...' : 'Save Window Settings'}
             </Button>
           </div>
         </CardContent>

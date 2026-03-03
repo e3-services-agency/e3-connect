@@ -116,7 +116,6 @@ const ImprovedBusinessHours: React.FC = () => {
 
     setSaving(true);
     try {
-      // INJECT timeFormat state here!
       const updatedHours: any = { 
         ...businessHours,
         time_format: timeFormat 
@@ -141,6 +140,23 @@ const ImprovedBusinessHours: React.FC = () => {
         .upsert(updatedHours, { onConflict: 'id' });
 
       if (error) throw error;
+
+      toast({
+        title: "Success",
+        description: "Global business hours updated successfully",
+      });
+      loadBusinessHours();
+    } catch (error) {
+      console.error('Error saving business hours:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save business hours",
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const toggleDay = (dayKey: string, isOpen: boolean) => {
     setDaySchedules(prev => ({
@@ -362,7 +378,7 @@ const ImprovedBusinessHours: React.FC = () => {
               disabled={saving}
               className="bg-e3-emerald hover:bg-e3-emerald/90 text-e3-space-blue font-medium"
             >
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving...' : 'Save Global Hours'}
             </Button>
           </div>
         </CardContent>

@@ -9,6 +9,7 @@ import { supabase } from '../integrations/supabase/client';
 import AddMemberForm from './forms/AddMemberForm';
 import AddTeamForm from './forms/AddTeamForm';
 import TeamRolesManager from './TeamRolesManager';
+import { generateSlug } from '../lib/utils';
 
 const TeamConfig: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'members' | 'teams' | 'roles'>('members');
@@ -92,6 +93,7 @@ const TeamConfig: React.FC = () => {
       name: member.name,
       role: member.role,
       is_active: member.isActive,
+      booking_slug: member.booking_slug || generateSlug(member.name),
       clientTeams: (member.clientTeams || []).map((team: any) => team.id)
     });
   };
@@ -117,7 +119,8 @@ const TeamConfig: React.FC = () => {
         .update({
           name: editData.name,
           role_id: roleData.id,
-          is_active: editData.is_active
+          is_active: editData.is_active,
+          booking_slug: editData.booking_slug
         })
         .eq('id', memberId);
 
@@ -530,6 +533,59 @@ const TeamConfig: React.FC = () => {
                           >
                             Test Calendar Access
                           </button>
+                        </div>
+
+                        {/* Individual Booking Link Section */}
+                        <div className="mt-4 mb-2 p-3 bg-e3-space-blue/50 rounded-md border border-e3-azure/20">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-e3-azure text-sm font-medium">Individual Booking Link</p>
+                            {editingMember !== member.id && (
+                              <button
+                                onClick={() => {
+                                  const slug = member.booking_slug || generateSlug(member.name);
+                                  const bookingUrl = `${window.location.origin}/book/${slug}`;
+                                  navigator.clipboard.writeText(bookingUrl);
+                                  toast({ title: "Link Copied!", description: "Booking link copied to clipboard" });
+                                }}
+                                className="text-xs text-e3-azure hover:text-e3-white px-2 py-1 bg-e3-azure/10 hover:bg-e3-azure/20 rounded transition"
+                              >
+                                Copy Link
+                              </button>
+                            )}
+                          </div>
+                          
+                          {editingMember === member.id ? (
+                            <div className="space-y-2">
+                              <div>
+                                <label className="block text-xs text-e3-white/60 mb-1">Booking Slug</label>
+                                <input
+                                  type="text"
+                                  value={editData?.booking_slug || ''}
+                                  onChange={(e) => setEditData(prev => ({ ...prev, booking_slug: e.target.value }))}
+                                  placeholder={generateSlug(member.name)}
+                                  className="w-full text-xs text-e3-white/80 bg-e3-space-blue/70 px-2 py-1 rounded border border-e3-white/20"
+                                />
+                              </div>
+                              <code className="block text-xs text-e3-white/80 bg-e3-space-blue/70 px-2 py-1 rounded border">
+                                {window.location.origin}/book/{editData?.booking_slug || generateSlug(member.name)}
+                              </code>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2">
+                              <code className="flex-1 text-xs text-e3-white/80 bg-e3-space-blue/70 px-2 py-1 rounded border overflow-x-auto whitespace-nowrap">
+                                {window.location.origin}/book/{member.booking_slug || generateSlug(member.name)}
+                              </code>
+                              <button
+                                onClick={() => {
+                                  const bookingUrl = `${window.location.origin}/book/${member.booking_slug || generateSlug(member.name)}`;
+                                  window.open(bookingUrl, '_blank');
+                                }}
+                                className="text-xs text-e3-emerald hover:text-e3-white px-2 py-1 bg-e3-emerald/10 hover:bg-e3-emerald/20 rounded transition flex-shrink-0"
+                              >
+                                View
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                       

@@ -53,42 +53,66 @@ const ClientBooking: React.FC = () => {
       }
 
       try {
-        console.log('Fetching team for slug:', clientSlug);
+        console.log('Fetching entity for slug:', clientSlug);
         
-        const { data: team, error } = await supabase
+        // 1. Try fetching Client Team first
+        const { data: team, error: teamError } = await supabase
           .from('client_teams')
           .select('*')
           .eq('booking_slug', clientSlug)
           .eq('is_active', true)
-          .single(); // .single() expects exactly one result
+          .maybeSingle(); 
 
-        // The client-side filtering logic is no longer needed.
-
-        if (error) {
-          // This error will trigger if no team is found or if multiple teams share a slug
-          console.error('Error fetching team for slug:', clientSlug, error.message);
+        if (team) {
+          console.log('Found team:', team);
+          setClientTeam(team);
+          setAppState(prev => ({ 
+            ...prev, 
+            clientTeamId: team.id,
+            bookingTitle: `${team.name} x E3`,
+            isIndividualBooking: false
+          }));
           setLoading(false);
-          // The !clientTeam check below will show the "Client Not Found" message
           return;
         }
 
-        console.log('Found team:', team);
-        setClientTeam(team);
+        // 2. Fallback: Try fetching Individual Member
+        const { data: member, error: memberError } = await supabase
+          .from('team_members')
+          .select('*')
+          .eq('booking_slug', clientSlug)
+          .eq('is_active', true)
+          .maybeSingle();
 
-        // Construct the title using the team's actual name
-        const title = `${team.name} x E3`; 
-        console.log('Setting initial booking title:', title);
+        if (member) {
+          console.log('Found individual member:', member);
+          setClientTeam(member); // We store the member here so the page doesn't show "Client Not Found"
+          
+          setAppState(prev => ({
+            ...prev,
+            isIndividualBooking: true,
+            individualMember: member,
+            requiredMembers: new Set([member.id]), // Pre-select them
+            currentStep: 1, // Start directly on Date & Time
+            totalSteps: 4,  // Skip the 'Team' step entirely
+            bookingTitle: `${member.name} x E3`,
+            steps: [
+              { name: 'DATE & TIME' },
+              { name: 'YOUR INFO' },
+              { name: 'GUESTS' },
+              { name: 'CONFIRM' }
+            ]
+          }));
+          setLoading(false);
+          return;
+        }
 
-        // Update the app state with BOTH the clientTeamId and the new bookingTitle
-        setAppState(prev => ({ 
-          ...prev, 
-          clientTeamId: team.id,
-          bookingTitle: title
-        }));
+        // Neither found
+        console.log('No team or individual found for slug:', clientSlug);
+        setLoading(false);
 
       } catch (error) {
-        // This catch block will handle network errors etc.
-        console.error('An unexpected error occurred while loading client team:', error);
+        console.error('An unexpected error occurred while loading:', error);
         navigate('/');
       } finally {
         setLoading(false);
@@ -122,19 +146,23 @@ const ClientBooking: React.FC = () => {
       onStateChange: handleStateChange
     };
 
+    if (appState.isIndividualBooking) {
+      switch (appState.currentStep) {
+        case 1: return <AvailabilityStep {...stepProps} />;
+        case 2: return <BookerInfoStep {...stepProps} />;
+        case 3: return <InviteStep {...stepProps} />;
+        case 4: return <ConfirmationStep {...stepProps} />;
+        default: return <AvailabilityStep {...stepProps} />;
+      }
+    }
+
     switch (appState.currentStep) {
-      case 1:
-        return <TeamStep {...stepProps} clientTeamFilter={clientTeam?.id} />;
-      case 2:
-        return <AvailabilityStep {...stepProps} />;
-      case 3:
-        return <BookerInfoStep {...stepProps} />;
-      case 4:
-        return <InviteStep {...stepProps} />;
-      case 5:
-        return <ConfirmationStep {...stepProps} />;
-      default:
-        return <TeamStep {...stepProps} clientTeamFilter={clientTeam?.id} />;
+      case 1: return <TeamStep {...stepProps} clientTeamFilter={clientTeam?.id} />;
+      case 2: return <AvailabilityStep {...stepProps} />;
+      case 3: return <BookerInfoStep {...stepProps} />;
+      case 4: return <InviteStep {...stepProps} />;
+      case 5: return <ConfirmationStep {...stepProps} />;
+      default: return <TeamStep {...stepProps} clientTeamFilter={clientTeam?.id} />;
     }
   };
 

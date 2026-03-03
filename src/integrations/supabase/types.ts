@@ -601,6 +601,7 @@ export type Database = {
       }
       team_members: {
         Row: {
+          booking_slug: string | null
           created_at: string
           email: string
           google_calendar_id: string | null
@@ -614,6 +615,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          booking_slug?: string | null
           created_at?: string
           email: string
           google_calendar_id?: string | null
@@ -627,6 +629,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          booking_slug?: string | null
           created_at?: string
           email?: string
           google_calendar_id?: string | null

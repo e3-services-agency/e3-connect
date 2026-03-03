@@ -498,147 +498,176 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
           <Calendar className="w-6 h-6 text-e3-azure" />
           <div>
             <h2 className="text-xl font-bold text-e3-white">Select Date & Time</h2>
-            <p className="text-e3-white/60 text-sm">Drag members to change status</p>
+            {/* HIDE this instruction for individual bookings */}
+            {!appState.isIndividualBooking && (
+              <p className="text-e3-white/60 text-sm">Drag members to change status</p>
+            )}
           </div>
         </div>
 
-        <div className="flex-grow min-w-0 w-full md:w-auto">
+        {/* HIDE the available member pool for individual bookings */}
+        {!appState.isIndividualBooking && (
+          <div className="flex-grow min-w-0 w-full md:w-auto">
             {selectedMembers.pool.length > 0 && (
-                <div 
-                    className="w-full bg-e3-space-blue/30 rounded-lg p-2.5 border border-e3-white/10 flex flex-col"
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop(e, 'pool')}
-                >
-                    <div className="text-[10px] font-bold text-e3-white/40 mb-1.5 uppercase tracking-wider flex items-center">
-                        <GripHorizontal className="w-3 h-3 mr-1" /> Available Team Members
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                        {selectedMembers.pool.map(m => (
-                            <div 
-                                key={m.id}
-                                draggable
-                                onDragStart={(e) => handleDragStart(e, m.id, 'pool')}
-                                className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-medium border border-dashed border-e3-white/30 cursor-grab active:cursor-grabbing hover:bg-e3-white/10 transition-all ${m.color.text}`}
-                            >
-                                {m.google_photo_url ? (
-                                  <img 
-                                    src={m.google_photo_url} 
-                                    alt={m.name} 
-                                    className="w-4 h-4 rounded-full object-cover"
-                                  />
-                                ) : (
-                                  <div className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[8px]">
-                                    {m.name.charAt(0)}
-                                  </div>
-                                )}
-                                {m.name}
-                            </div>
-                        ))}
-                    </div>
+              <div 
+                className="w-full bg-e3-space-blue/30 rounded-lg p-2.5 border border-e3-white/10 flex flex-col"
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDrop(e, 'pool')}
+              >
+                <div className="text-[10px] font-bold text-e3-white/40 mb-1.5 uppercase tracking-wider flex items-center">
+                  <GripHorizontal className="w-3 h-3 mr-1" /> Available Team Members
                 </div>
+                <div className="flex flex-wrap gap-2">
+                  {selectedMembers.pool.map(m => (
+                    <div 
+                      key={m.id}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, m.id, 'pool')}
+                      className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-medium border border-dashed border-e3-white/30 cursor-grab active:cursor-grabbing hover:bg-e3-white/10 transition-all ${m.color.text}`}
+                    >
+                      {m.google_photo_url ? (
+                        <img 
+                          src={m.google_photo_url} 
+                          alt={m.name} 
+                          className="w-4 h-4 rounded-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-4 h-4 rounded-full bg-white/10 flex items-center justify-center text-[8px]">
+                          {m.name.charAt(0)}
+                        </div>
+                      )}
+                      {m.name}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Conditionally show Required/Optional zones OR the Individual Badge */}
+      {!appState.isIndividualBooking ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-none">
+          <div 
+            className={`rounded-lg p-3 border border-e3-azure/20 transition-colors min-h-[80px] ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-e3-emerald/50' : 'bg-e3-space-blue/30'}`}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, 'required')}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                <span className="text-xs font-bold text-e3-white uppercase tracking-wider">Required</span>
+                <span className="text-[10px] text-e3-white/40">(Must be available)</span>
+              </div>
+              {selectedMembers.required.length > 0 && (
+                <button onClick={() => clearSection('required')} className="text-[10px] text-e3-white/40 hover:text-e3-flame flex items-center gap-1">
+                  <Trash2 className="w-3 h-3" /> Clear
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {selectedMembers.required.length === 0 ? (
+                <div className="w-full h-full flex items-center justify-center text-[10px] text-e3-white/20 italic py-2">
+                  Drop required members here
+                </div>
+              ) : (
+                selectedMembers.required.map(m => (
+                  <div 
+                    key={m.id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, m.id, 'required')}
+                    className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
+                  >
+                    {m.google_photo_url ? (
+                      <img 
+                        src={m.google_photo_url} 
+                        alt={m.name} 
+                        className="w-4 h-4 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px]">
+                        {m.name.charAt(0)}
+                      </div>
+                    )}
+                    {m.name}
+                    <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full"><X className="w-3 h-3 opacity-70" /></button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div 
+            className={`rounded-lg p-3 border border-e3-azure/20 transition-colors min-h-[80px] ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-blue-400/50' : 'bg-e3-space-blue/30'}`}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, 'optional')}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-blue-400"></span>
+                <span className="text-xs font-bold text-e3-white uppercase tracking-wider">Optional</span>
+                <span className="text-[10px] text-e3-white/40">(Invited if free)</span>
+              </div>
+              {selectedMembers.optional.length > 0 && (
+                <button onClick={() => clearSection('optional')} className="text-[10px] text-e3-white/40 hover:text-e3-flame flex items-center gap-1">
+                  <Trash2 className="w-3 h-3" /> Clear
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {selectedMembers.optional.length === 0 ? (
+                <div className="w-full h-full flex items-center justify-center text-[10px] text-e3-white/20 italic py-2">
+                  Drop optional members here
+                </div>
+              ) : (
+                selectedMembers.optional.map(m => (
+                  <div 
+                    key={m.id}
+                    draggable
+                    onDragStart={(e) => handleDragStart(e, m.id, 'optional')}
+                    className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
+                  >
+                    {m.google_photo_url ? (
+                      <img 
+                        src={m.google_photo_url} 
+                        alt={m.name} 
+                        className="w-4 h-4 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px]">
+                        {m.name.charAt(0)}
+                      </div>
+                    )}
+                    {m.name}
+                    <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full"><X className="w-3 h-3 opacity-70" /></button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-none">
-            <div 
-                className={`rounded-lg p-3 border border-e3-azure/20 transition-colors min-h-[80px] ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-e3-emerald/50' : 'bg-e3-space-blue/30'}`}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, 'required')}
-            >
-                <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                        <span className="text-xs font-bold text-e3-white uppercase tracking-wider">Required</span>
-                        <span className="text-[10px] text-e3-white/40">(Must be available)</span>
-                    </div>
-                    {selectedMembers.required.length > 0 && (
-                        <button onClick={() => clearSection('required')} className="text-[10px] text-e3-white/40 hover:text-e3-flame flex items-center gap-1">
-                            <Trash2 className="w-3 h-3" /> Clear
-                        </button>
-                    )}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                    {selectedMembers.required.length === 0 ? (
-                        <div className="w-full h-full flex items-center justify-center text-[10px] text-e3-white/20 italic py-2">
-                            Drop required members here
-                        </div>
-                    ) : (
-                        selectedMembers.required.map(m => (
-                            <div 
-                                key={m.id}
-                                draggable
-                                onDragStart={(e) => handleDragStart(e, m.id, 'required')}
-                                className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
-                            >
-                                {m.google_photo_url ? (
-                                  <img 
-                                    src={m.google_photo_url} 
-                                    alt={m.name} 
-                                    className="w-4 h-4 rounded-full object-cover"
-                                  />
-                                ) : (
-                                  <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px]">
-                                    {m.name.charAt(0)}
-                                  </div>
-                                )}
-                                {m.name}
-                                <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full"><X className="w-3 h-3 opacity-70" /></button>
-                            </div>
-                        ))
-                    )}
-                </div>
+      ) : (
+        /* INDIVIDUAL BOOKING BADGE */
+        <div className="flex items-center gap-3 p-4 bg-e3-space-blue/30 rounded-lg border border-e3-emerald/20 flex-none">
+          {appState.individualMember?.google_photo_url ? (
+            <img 
+              src={appState.individualMember.google_photo_url} 
+              alt={appState.individualMember.name} 
+              className="w-10 h-10 rounded-full border-2 border-e3-emerald/30 object-cover"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="w-10 h-10 rounded-full bg-e3-emerald/20 flex items-center justify-center text-e3-emerald font-bold border-2 border-e3-emerald/30">
+              {appState.individualMember?.name.charAt(0) || '?'}
             </div>
-
-            <div 
-                className={`rounded-lg p-3 border border-e3-azure/20 transition-colors min-h-[80px] ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-blue-400/50' : 'bg-e3-space-blue/30'}`}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDrop(e, 'optional')}
-            >
-                <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-blue-400"></span>
-                        <span className="text-xs font-bold text-e3-white uppercase tracking-wider">Optional</span>
-                        <span className="text-[10px] text-e3-white/40">(Invited if free)</span>
-                    </div>
-                    {selectedMembers.optional.length > 0 && (
-                        <button onClick={() => clearSection('optional')} className="text-[10px] text-e3-white/40 hover:text-e3-flame flex items-center gap-1">
-                            <Trash2 className="w-3 h-3" /> Clear
-                        </button>
-                    )}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                    {selectedMembers.optional.length === 0 ? (
-                        <div className="w-full h-full flex items-center justify-center text-[10px] text-e3-white/20 italic py-2">
-                            Drop optional members here
-                        </div>
-                    ) : (
-                        selectedMembers.optional.map(m => (
-                            <div 
-                                key={m.id}
-                                draggable
-                                onDragStart={(e) => handleDragStart(e, m.id, 'optional')}
-                                className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
-                            >
-                                {m.google_photo_url ? (
-                                  <img 
-                                    src={m.google_photo_url} 
-                                    alt={m.name} 
-                                    className="w-4 h-4 rounded-full object-cover"
-                                  />
-                                ) : (
-                                  <div className="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center text-[8px]">
-                                    {m.name.charAt(0)}
-                                  </div>
-                                )}
-                                {m.name}
-                                <button onClick={() => removeMember(m.id)} className="p-0.5 hover:bg-black/10 rounded-full"><X className="w-3 h-3 opacity-70" /></button>
-                            </div>
-                        ))
-                    )}
-                </div>
-            </div>
-      </div>
+          )}
+          <div>
+            <p className="font-bold text-e3-white text-lg">{appState.individualMember?.name}</p>
+            <p className="text-sm text-e3-white/60">Booking a 1-on-1 session</p>
+          </div>
+        </div>
+      )}
 
       {error && <div className="text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
 

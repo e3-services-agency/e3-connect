@@ -59,35 +59,33 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   const { teamMembers, loading: membersLoading } = useTeamData(activeFilter);
 
   const resolvedTeamId = useMemo(() => {
+    // If it's an individual, use default global business hours
+    if (appState.isIndividualBooking) return undefined; 
+    
     if (!activeFilter) return undefined;
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeFilter);
     if (isUUID) return activeFilter;
     if (teamMembers.length > 0) {
-       const team = teamMembers[0].clientTeams.find(t => 
+       const team = teamMembers[0].clientTeams?.find((t: any) => 
          t.booking_slug === activeFilter || 
          t.name.toLowerCase().replace(/ /g, '-') === activeFilter
        );
-       return team?.id || teamMembers[0].clientTeams[0].id;
+       return team?.id || teamMembers[0].clientTeams?.[0]?.id;
     }
     return undefined;
-  }, [activeFilter, teamMembers]);
+  }, [activeFilter, teamMembers, appState.isIndividualBooking]);
 
   const { getWorkingHoursForDate, isWorkingDay } = useBusinessHours(resolvedTeamId);
 
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
-  const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [monthlyBusySchedule, setMonthlyBusySchedule] = useState<Record<string, BusySlot[]>>({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [schedulingSettings, setSchedulingSettings] = useState<SchedulingWindowSettings | null>(null);
-  const [draggedMember, setDraggedMember] = useState<{ id: string, from: 'required' | 'optional' | 'pool' } | null>(null);
-  
-  const hasInitialized = useRef(false);
+  // ... (keep the states like selectedDate, availableSlots, etc. here) ...
 
   const connectedMembers = useMemo(() => {
+    // If we are booking an individual, inject them directly as the only member
+    if (appState.isIndividualBooking && appState.individualMember) {
+      return [appState.individualMember]; 
+    }
     return teamMembers.filter(member => !!member.email);
-  }, [teamMembers]);
+  }, [teamMembers, appState.isIndividualBooking, appState.individualMember]);
 
   useEffect(() => {
     if (membersLoading || connectedMembers.length === 0) return;
@@ -476,7 +474,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     onNext();
   };
 
-  if (membersLoading) {
+  if (membersLoading && !appState.isIndividualBooking) {
     return (
       <div className="flex items-center justify-center py-12 text-e3-white/60 gap-3">
         <Loader className="w-6 h-6 animate-spin" />

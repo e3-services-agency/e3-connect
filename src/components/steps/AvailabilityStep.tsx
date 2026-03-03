@@ -73,7 +73,10 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     return undefined;
   }, [activeFilter, teamMembers, appState.isIndividualBooking]);
 
-  const { getWorkingHoursForDate, isWorkingDay } = useBusinessHours(resolvedTeamId);
+  const { getWorkingHoursForDate, isWorkingDay } = useBusinessHours(
+    resolvedTeamId, 
+    appState.isIndividualBooking ? appState.individualMember?.id : undefined
+  );
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
@@ -203,29 +206,62 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   }, [currentMonth]);
 
   useEffect(() => {
+    useEffect(() => {
     const loadSchedulingSettings = async () => {
       try {
-        const { data } = await supabase
-          .from('scheduling_window_settings')
-          .select('min_notice_hours, max_advance_days, availability_type')
-          .eq('is_active', true)
-          .maybeSingle();
-        
-        if (data) {
+        let foundSettings = null;
+
+        // 1. Try Individual Member Override
+        if (appState.isIndividualBooking && appState.individualMember?.id) {
+          const { data } = await supabase
+            .from('scheduling_window_settings')
+            .select('min_notice_hours, max_advance_days, availability_type')
+            .eq('team_member_id', appState.individualMember.id)
+            .eq('is_active', true)
+            .maybeSingle();
+          if (data) foundSettings = data;
+        }
+
+        // 2. Try Client Team Override
+        if (!foundSettings && resolvedTeamId) {
+          const { data } = await supabase
+            .from('scheduling_window_settings')
+            .select('min_notice_hours, max_advance_days, availability_type')
+            .eq('client_team_id', resolvedTeamId)
+            .eq('is_active', true)
+            .maybeSingle();
+          if (data) foundSettings = data;
+        }
+
+        // 3. Fallback to Global Defaults
+        if (!foundSettings) {
+          const { data } = await supabase
+            .from('scheduling_window_settings')
+            .select('min_notice_hours, max_advance_days, availability_type')
+            .is('client_team_id', null)
+            .is('team_member_id', null)
+            .eq('is_active', true)
+            .maybeSingle();
+          if (data) foundSettings = data;
+        }
+
+        // Apply whatever settings we found
+        if (foundSettings) {
           setSchedulingSettings({
-            min_notice_hours: data.min_notice_hours || 4,
-            max_advance_days: data.max_advance_days || 60,
-            availability_type: data.availability_type || 'available_now'
+            min_notice_hours: foundSettings.min_notice_hours || 4,
+            max_advance_days: foundSettings.max_advance_days || 60,
+            availability_type: foundSettings.availability_type || 'available_now'
           });
         } else {
           setSchedulingSettings({ min_notice_hours: 4, max_advance_days: 60, availability_type: 'available_now' });
         }
-      } catch {
+      } catch (err) {
+        console.error('Error fetching scheduling settings:', err);
         setSchedulingSettings({ min_notice_hours: 4, max_advance_days: 60, availability_type: 'available_now' });
       }
     };
     loadSchedulingSettings();
-  }, []);
+  }, [appState.isIndividualBooking, appState.individualMember?.id, resolvedTeamId]);
 
   useEffect(() => {
     const loadMonthlyAvailability = async () => {

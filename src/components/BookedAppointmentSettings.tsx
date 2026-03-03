@@ -9,38 +9,54 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
-interface BookedAppointmentSettings {
+interface BookedAppointmentSettingsProps {
+  clientTeamId?: string;
+  teamMemberId?: string;
+}
+
+interface BookedAppointmentSettingsData {
   id: string;
   buffer_time_minutes: number;
   max_bookings_per_day: number | null;
   guests_can_invite_others: boolean;
 }
 
-const BookedAppointmentSettings: React.FC = () => {
-  const [settings, setSettings] = useState<BookedAppointmentSettings | null>(null);
+const BookedAppointmentSettings: React.FC<BookedAppointmentSettingsProps> = ({ clientTeamId, teamMemberId }) => {
+  const [settings, setSettings] = useState<BookedAppointmentSettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [bufferEnabled, setBufferEnabled] = useState(false);
   const [maxBookingsEnabled, setMaxBookingsEnabled] = useState(false);
   const { toast } = useToast();
 
+  const isOverride = !!(clientTeamId || teamMemberId);
+
   useEffect(() => {
     loadSettings();
-  }, []);
+  }, [clientTeamId, teamMemberId]);
 
   const loadSettings = async () => {
+    setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('booked_appointment_settings')
-        .select('*')
-        .eq('is_active', true)
-        .maybeSingle();
+      let query = supabase.from('booked_appointment_settings').select('*').eq('is_active', true);
+
+      if (clientTeamId) {
+        query = query.eq('client_team_id', clientTeamId).is('team_member_id', null);
+      } else if (teamMemberId) {
+        query = query.eq('team_member_id', teamMemberId).is('client_team_id', null);
+      } else {
+        query = query.is('client_team_id', null).is('team_member_id', null);
+      }
+
+      const { data, error } = await query.maybeSingle();
 
       if (error) throw error;
       if (data) {
-        setSettings(data);
+        setSettings(data as BookedAppointmentSettingsData);
         setBufferEnabled(data.buffer_time_minutes > 0);
         setMaxBookingsEnabled(data.max_bookings_per_day !== null);
+      } else {
+        setSettings(null); // Reset if no override exists
       }
     } catch (error) {
       console.error('Error loading booked appointment settings:', error);
@@ -62,9 +78,12 @@ const BookedAppointmentSettings: React.FC = () => {
       const { error } = await supabase
         .from('booked_appointment_settings')
         .upsert({
-          ...settings,
+          ...(settings.id ? { id: settings.id } : {}), // Only include ID if updating
           buffer_time_minutes: bufferEnabled ? settings.buffer_time_minutes : 0,
           max_bookings_per_day: maxBookingsEnabled ? settings.max_bookings_per_day : null,
+          guests_can_invite_others: settings.guests_can_invite_others,
+          client_team_id: clientTeamId || null,
+          team_member_id: teamMemberId || null,
           updated_at: new Date().toISOString(),
         }, {
           onConflict: 'id'
@@ -76,6 +95,7 @@ const BookedAppointmentSettings: React.FC = () => {
         title: "Settings saved",
         description: "Appointment settings updated successfully",
       });
+      loadSettings(); // Reload to get the new ID if it was an insert
     } catch (error) {
       console.error('Error saving settings:', error);
       toast({
@@ -88,7 +108,22 @@ const BookedAppointmentSettings: React.FC = () => {
     }
   };
 
-  const updateSettings = (updates: Partial<BookedAppointmentSettings>) => {
+  const deleteOverride = async () => {
+    if (!settings?.id) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('booked_appointment_settings').delete().eq('id', settings.id);
+      if (error) throw error;
+      setSettings(null);
+      toast({ title: "Override removed", description: "Reverted to global settings" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to remove override", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateSettings = (updates: Partial<BookedAppointmentSettingsData>) => {
     if (!settings) return;
     setSettings({ ...settings, ...updates });
   };
@@ -103,8 +138,10 @@ const BookedAppointmentSettings: React.FC = () => {
 
   if (!settings) {
     return (
-      <div className="text-center p-8">
-        <p className="text-e3-white/60">No appointment settings found</p>
+      <div className="text-center p-8 bg-e3-space-blue/30 rounded-lg border border-e3-white/10">
+        <p className="text-e3-white/60 mb-4">
+          {isOverride ? "Currently using Global Default Settings." : "No global appointment settings found."}
+        </p>
         <Button 
           onClick={() => setSettings({
             id: '',
@@ -112,9 +149,9 @@ const BookedAppointmentSettings: React.FC = () => {
             max_bookings_per_day: null,
             guests_can_invite_others: true
           })}
-          className="mt-4"
+          className="bg-e3-emerald text-e3-space-blue hover:bg-e3-emerald/90"
         >
-          Create Settings
+          {isOverride ? "Override Global Settings" : "Create Global Settings"}
         </Button>
       </div>
     );
@@ -122,11 +159,15 @@ const BookedAppointmentSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <CheckSquare className="w-5 h-5 text-e3-emerald" />
-        <h2 className="text-xl font-semibold text-e3-white">Booked appointment settings</h2>
-      </div>
-      <p className="text-e3-white/60 mb-6">Manage the booked appointments that will appear on your calendar</p>
+      {!isOverride && (
+        <>
+          <div className="flex items-center gap-3 mb-6">
+            <CheckSquare className="w-5 h-5 text-e3-emerald" />
+            <h2 className="text-xl font-semibold text-e3-white">Booked appointment settings</h2>
+          </div>
+          <p className="text-e3-white/60 mb-6">Manage the booked appointments that will appear on your calendar</p>
+        </>
+      )}
 
       <Card className="bg-e3-space-blue/30 border-e3-white/10">
         <CardContent className="p-6 space-y-6">
@@ -200,7 +241,17 @@ const BookedAppointmentSettings: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-end pt-4">
+          <div className="flex justify-end gap-3 pt-4 border-t border-e3-white/10">
+            {isOverride && settings.id && (
+              <Button 
+                variant="outline"
+                onClick={deleteOverride}
+                disabled={saving}
+                className="border-e3-flame/50 text-e3-flame hover:bg-e3-flame/10"
+              >
+                Remove Override
+              </Button>
+            )}
             <Button 
               onClick={saveSettings}
               disabled={saving}

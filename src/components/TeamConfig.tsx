@@ -10,6 +10,7 @@ import AddMemberForm from './forms/AddMemberForm';
 import AddTeamForm from './forms/AddTeamForm';
 import TeamRolesManager from './TeamRolesManager';
 import { generateSlug } from '../lib/utils';
+import EntitySettingsModal from './EntitySettingsModal';
 
 const TeamConfig: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'members' | 'teams' | 'roles'>('members');
@@ -21,6 +22,7 @@ const TeamConfig: React.FC = () => {
   const [availableRoles, setAvailableRoles] = useState<any[]>([]);
   const { toast } = useToast();  
   const { teamMembers = [], clientTeams = [], loading, error, refetch } = useTeamData() || {};
+  const [settingsModal, setSettingsModal] = useState<{type: 'team' | 'member', id: string, name: string} | null>(null);
 
   // Load available roles
   React.useEffect(() => {
@@ -611,6 +613,14 @@ const TeamConfig: React.FC = () => {
                         ) : (
                           <>
                             <button 
+                              onClick={() => setSettingsModal({ type: 'member', id: member.id, name: member.name })}
+                              className="p-2 text-e3-emerald hover:text-e3-white transition bg-e3-emerald/10 hover:bg-e3-emerald/20 rounded-md"
+                              title="Manage Override Settings"
+                            >
+                              <Settings className="w-4 h-4" />
+                            </button>
+
+                            <button 
                               onClick={() => handleEditMember(member)}
                               className="p-2 text-e3-azure hover:text-e3-white transition"
                             >
@@ -817,6 +827,14 @@ const TeamConfig: React.FC = () => {
                           ) : (
                             <>
                               <button 
+                                onClick={() => setSettingsModal({ type: 'team', id: team.id, name: team.name })}
+                                className="p-2 text-e3-emerald hover:text-e3-white transition bg-e3-emerald/10 hover:bg-e3-emerald/20 rounded-md"
+                                title="Manage Override Settings"
+                              >
+                                <Settings className="w-4 h-4" />
+                              </button>
+
+                              <button 
                                 onClick={() => handleEditTeam(team)}
                                 className="p-2 text-e3-azure hover:text-e3-white transition"
                               >
@@ -859,6 +877,17 @@ const TeamConfig: React.FC = () => {
           <AddTeamForm
             onClose={() => setShowAddTeam(false)}
             onSuccess={handleAddTeamSuccess}
+          />
+        )}
+      
+        {/* Entity Settings Override Modal */}
+        {settingsModal && (
+          <EntitySettingsModal
+            isOpen={!!settingsModal}
+            onClose={() => setSettingsModal(null)}
+            entityType={settingsModal.type}
+            entityId={settingsModal.id}
+            entityName={settingsModal.name}
           />
         )}
       </div>

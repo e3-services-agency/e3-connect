@@ -249,7 +249,7 @@ const BookedAppointmentSettings: React.FC<BookedAppointmentSettingsProps> = ({ c
                 disabled={saving}
                 className="border-e3-flame/50 text-e3-flame hover:bg-e3-flame/10"
               >
-                Remove Override
+                Remove Appointment Override
               </Button>
             )}
             <Button 
@@ -257,9 +257,8 @@ const BookedAppointmentSettings: React.FC<BookedAppointmentSettingsProps> = ({ c
               disabled={saving}
               className="bg-e3-emerald hover:bg-e3-emerald/90 text-e3-space-blue font-medium"
             >
-              {saving ? 'Saving...' : 'Save Settings'}
+              {saving ? 'Saving...' : 'Save Appointment Settings'}
             </Button>
-          </div>
         </CardContent>
       </Card>
     </div>

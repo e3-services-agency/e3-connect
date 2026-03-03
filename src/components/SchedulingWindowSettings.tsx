@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Calendar, Clock } from 'lucide-react';
+import { Calendar } from 'lucide-react';
 import { Button } from './ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent } from './ui/card';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { Label } from './ui/label';
 import { Input } from './ui/input';
@@ -9,7 +9,12 @@ import { Checkbox } from './ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
-interface SchedulingWindowSettings {
+interface SchedulingWindowSettingsProps {
+  clientTeamId?: string;
+  teamMemberId?: string;
+}
+
+interface SchedulingWindowSettingsData {
   id: string;
   availability_type: 'available_now' | 'date_range';
   start_date: string | null;
@@ -18,23 +23,32 @@ interface SchedulingWindowSettings {
   min_notice_hours: number;
 }
 
-const SchedulingWindowSettings: React.FC = () => {
-  const [settings, setSettings] = useState<SchedulingWindowSettings | null>(null);
+const SchedulingWindowSettings: React.FC<SchedulingWindowSettingsProps> = ({ clientTeamId, teamMemberId }) => {
+  const [settings, setSettings] = useState<SchedulingWindowSettingsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const { toast } = useToast();
 
+  const isOverride = !!(clientTeamId || teamMemberId);
+
   useEffect(() => {
     loadSettings();
-  }, []);
+  }, [clientTeamId, teamMemberId]);
 
   const loadSettings = async () => {
+    setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('scheduling_window_settings')
-        .select('*')
-        .eq('is_active', true)
-        .maybeSingle();
+      let query = supabase.from('scheduling_window_settings').select('*').eq('is_active', true);
+
+      if (clientTeamId) {
+        query = query.eq('client_team_id', clientTeamId).is('team_member_id', null);
+      } else if (teamMemberId) {
+        query = query.eq('team_member_id', teamMemberId).is('client_team_id', null);
+      } else {
+        query = query.is('client_team_id', null).is('team_member_id', null);
+      }
+
+      const { data, error } = await query.maybeSingle();
 
       if (error) throw error;
       if (data) {
@@ -43,9 +57,11 @@ const SchedulingWindowSettings: React.FC = () => {
           availability_type: data.availability_type as 'available_now' | 'date_range',
           start_date: data.start_date,
           end_date: data.end_date,
-          max_advance_days: data.max_advance_days,
-          min_notice_hours: data.min_notice_hours,
+          max_advance_days: data.max_advance_days || 60,
+          min_notice_hours: data.min_notice_hours || 5,
         });
+      } else {
+        setSettings(null);
       }
     } catch (error) {
       console.error('Error loading scheduling window settings:', error);
@@ -67,7 +83,14 @@ const SchedulingWindowSettings: React.FC = () => {
       const { error } = await supabase
         .from('scheduling_window_settings')
         .upsert({
-          ...settings,
+          ...(settings.id ? { id: settings.id } : {}),
+          availability_type: settings.availability_type,
+          start_date: settings.start_date,
+          end_date: settings.end_date,
+          max_advance_days: settings.max_advance_days,
+          min_notice_hours: settings.min_notice_hours,
+          client_team_id: clientTeamId || null,
+          team_member_id: teamMemberId || null,
           updated_at: new Date().toISOString(),
         }, {
           onConflict: 'id'
@@ -79,6 +102,7 @@ const SchedulingWindowSettings: React.FC = () => {
         title: "Settings saved",
         description: "Scheduling window settings updated successfully",
       });
+      loadSettings();
     } catch (error) {
       console.error('Error saving settings:', error);
       toast({
@@ -91,7 +115,22 @@ const SchedulingWindowSettings: React.FC = () => {
     }
   };
 
-  const updateSettings = (updates: Partial<SchedulingWindowSettings>) => {
+  const deleteOverride = async () => {
+    if (!settings?.id) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('scheduling_window_settings').delete().eq('id', settings.id);
+      if (error) throw error;
+      setSettings(null);
+      toast({ title: "Override removed", description: "Reverted to global settings" });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to remove override", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateSettings = (updates: Partial<SchedulingWindowSettingsData>) => {
     if (!settings) return;
     setSettings({ ...settings, ...updates });
   };
@@ -106,8 +145,10 @@ const SchedulingWindowSettings: React.FC = () => {
 
   if (!settings) {
     return (
-      <div className="text-center p-8">
-        <p className="text-e3-white/60">No scheduling window settings found</p>
+      <div className="text-center p-8 bg-e3-space-blue/30 rounded-lg border border-e3-white/10">
+        <p className="text-e3-white/60 mb-4">
+          {isOverride ? "Currently using Global Default Settings." : "No global scheduling window settings found."}
+        </p>
         <Button 
           onClick={() => setSettings({
             id: '',
@@ -117,9 +158,9 @@ const SchedulingWindowSettings: React.FC = () => {
             max_advance_days: 60,
             min_notice_hours: 5
           })}
-          className="mt-4"
+          className="bg-e3-emerald text-e3-space-blue hover:bg-e3-emerald/90"
         >
-          Create Settings
+          {isOverride ? "Override Global Settings" : "Create Global Settings"}
         </Button>
       </div>
     );
@@ -127,11 +168,15 @@ const SchedulingWindowSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <Calendar className="w-5 h-5 text-e3-emerald" />
-        <h2 className="text-xl font-semibold text-e3-white">Scheduling window</h2>
-      </div>
-      <p className="text-e3-white/60 mb-6">Limit the time range that appointments can be booked</p>
+      {!isOverride && (
+        <>
+          <div className="flex items-center gap-3 mb-6">
+            <Calendar className="w-5 h-5 text-e3-emerald" />
+            <h2 className="text-xl font-semibold text-e3-white">Scheduling window</h2>
+          </div>
+          <p className="text-e3-white/60 mb-6">Limit the time range that appointments can be booked</p>
+        </>
+      )}
 
       <Card className="bg-e3-space-blue/30 border-e3-white/10">
         <CardContent className="p-6 space-y-6">
@@ -236,13 +281,23 @@ const SchedulingWindowSettings: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex justify-end pt-4">
+          <div className="flex justify-end gap-3 pt-4 border-t border-e3-white/10">
+            {isOverride && settings.id && (
+              <Button 
+                variant="outline"
+                onClick={deleteOverride}
+                disabled={saving}
+                className="border-e3-flame/50 text-e3-flame hover:bg-e3-flame/10"
+              >
+                Remove Window Override
+              </Button>
+            )}
             <Button 
               onClick={saveSettings}
               disabled={saving}
               className="bg-e3-emerald hover:bg-e3-emerald/90 text-e3-space-blue font-medium"
             >
-              {saving ? 'Saving...' : 'Save Settings'}
+              {saving ? 'Saving...' : 'Save Window Settings'}
             </Button>
           </div>
         </CardContent>

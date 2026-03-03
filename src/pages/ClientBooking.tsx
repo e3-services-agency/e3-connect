@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AppState } from '../types/scheduling';
 import ProgressBar from '../components/ProgressBar';
@@ -15,6 +15,10 @@ const ClientBooking: React.FC = () => {
   const navigate = useNavigate();
   const [clientTeam, setClientTeam] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // Check if we are rendering inside a website iframe
+  const searchParams = new URLSearchParams(window.location.search);
+  const isEmbedded = searchParams.get('embed') === 'true';
 
   const initialState: AppState = {
     currentStep: 1,
@@ -53,42 +57,66 @@ const ClientBooking: React.FC = () => {
       }
 
       try {
-        console.log('Fetching team for slug:', clientSlug);
+        console.log('Fetching entity for slug:', clientSlug);
         
-        const { data: team, error } = await supabase
+        // 1. Try fetching Client Team first
+        const { data: team, error: teamError } = await supabase
           .from('client_teams')
           .select('*')
           .eq('booking_slug', clientSlug)
           .eq('is_active', true)
-          .single(); // .single() expects exactly one result
+          .maybeSingle(); 
 
-        // The client-side filtering logic is no longer needed.
-
-        if (error) {
-          // This error will trigger if no team is found or if multiple teams share a slug
-          console.error('Error fetching team for slug:', clientSlug, error.message);
+        if (team) {
+          console.log('Found team:', team);
+          setClientTeam(team);
+          setAppState(prev => ({ 
+            ...prev, 
+            clientTeamId: team.id,
+            bookingTitle: `${team.name} x E3`,
+            isIndividualBooking: false
+          }));
           setLoading(false);
-          // The !clientTeam check below will show the "Client Not Found" message
           return;
         }
 
-        console.log('Found team:', team);
-        setClientTeam(team);
+        // 2. Fallback: Try fetching Individual Member
+        const { data: member, error: memberError } = await supabase
+          .from('team_members')
+          .select('*')
+          .eq('booking_slug', clientSlug)
+          .eq('is_active', true)
+          .maybeSingle();
 
-        // Construct the title using the team's actual name
-        const title = `${team.name} x E3`; 
-        console.log('Setting initial booking title:', title);
+        if (member) {
+          console.log('Found individual member:', member);
+          setClientTeam(member); // We store the member here so the page doesn't show "Client Not Found"
+          
+          setAppState(prev => ({
+            ...prev,
+            isIndividualBooking: true,
+            individualMember: member,
+            requiredMembers: new Set([member.id]), // Pre-select them
+            currentStep: 1, // Start directly on Date & Time
+            totalSteps: 4,  // Skip the 'Team' step entirely
+            bookingTitle: `Meeting with ${member.name}`,
+            steps: [
+              { name: 'DATE & TIME' },
+              { name: 'YOUR INFO' },
+              { name: 'GUESTS' },
+              { name: 'CONFIRM' }
+            ]
+          }));
+          setLoading(false);
+          return;
+        }
 
-        // Update the app state with BOTH the clientTeamId and the new bookingTitle
-        setAppState(prev => ({ 
-          ...prev, 
-          clientTeamId: team.id,
-          bookingTitle: title
-        }));
+        // Neither found
+        console.log('No team or individual found for slug:', clientSlug);
+        setLoading(false);
 
       } catch (error) {
-        // This catch block will handle network errors etc.
-        console.error('An unexpected error occurred while loading client team:', error);
+        console.error('An unexpected error occurred while loading:', error);
         navigate('/');
       } finally {
         setLoading(false);
@@ -110,9 +138,10 @@ const ClientBooking: React.FC = () => {
     }
   };
 
-  const handleStateChange = (updates: Partial<AppState>) => {
+  // Using useCallback prevents the infinite state-update loop in child components
+  const handleStateChange = useCallback((updates: Partial<AppState>) => {
     setAppState(prev => ({ ...prev, ...updates }));
-  };
+  }, []);
 
   const renderStep = () => {
     const stepProps = {
@@ -122,19 +151,23 @@ const ClientBooking: React.FC = () => {
       onStateChange: handleStateChange
     };
 
+    if (appState.isIndividualBooking) {
+      switch (appState.currentStep) {
+        case 1: return <AvailabilityStep {...stepProps} />;
+        case 2: return <BookerInfoStep {...stepProps} />;
+        case 3: return <InviteStep {...stepProps} />;
+        case 4: return <ConfirmationStep {...stepProps} />;
+        default: return <AvailabilityStep {...stepProps} />;
+      }
+    }
+
     switch (appState.currentStep) {
-      case 1:
-        return <TeamStep {...stepProps} clientTeamFilter={clientTeam?.id} />;
-      case 2:
-        return <AvailabilityStep {...stepProps} />;
-      case 3:
-        return <BookerInfoStep {...stepProps} />;
-      case 4:
-        return <InviteStep {...stepProps} />;
-      case 5:
-        return <ConfirmationStep {...stepProps} />;
-      default:
-        return <TeamStep {...stepProps} clientTeamFilter={clientTeam?.id} />;
+      case 1: return <TeamStep {...stepProps} clientTeamFilter={clientTeam?.id} />;
+      case 2: return <AvailabilityStep {...stepProps} />;
+      case 3: return <BookerInfoStep {...stepProps} />;
+      case 4: return <InviteStep {...stepProps} />;
+      case 5: return <ConfirmationStep {...stepProps} />;
+      default: return <TeamStep {...stepProps} clientTeamFilter={clientTeam?.id} />;
     }
   };
 
@@ -160,9 +193,13 @@ const ClientBooking: React.FC = () => {
     );
   }
 
-    return (
-      <div className="min-h-screen bg-e3-space-blue p-4 sm:p-6">
-        <div className="max-w-4xl mx-auto">
+  return (
+    // Dynamic styling based on whether it is embedded or full screen
+    <div className={isEmbedded ? "bg-transparent w-full p-0 sm:p-2" : "min-h-screen bg-e3-space-blue p-4 sm:p-6"}>
+      <div className={isEmbedded ? "w-full mx-auto" : "max-w-4xl mx-auto"}>
+        
+        {/* Only show the header if it is NOT embedded */}
+        {!isEmbedded && (
           <header className="mb-6">
             <div className="flex items-center justify-between mb-4">
               <a 
@@ -183,19 +220,18 @@ const ClientBooking: React.FC = () => {
               <div className="w-12"></div> {/* Spacer for balance */}
             </div>
           </header>
-          
-          <div className="mb-4">
-            <ProgressBar 
-              appState={appState}
-            />
-          </div>
-          
-          <main className="px-2 sm:px-0">
-            {renderStep()}
-          </main>
+        )}
+        
+        <div className="mb-4">
+          <ProgressBar appState={appState} />
         </div>
+        
+        <main className={isEmbedded ? "px-0" : "px-2 sm:px-0"}>
+          {renderStep()}
+        </main>
       </div>
-    );
+    </div>
+  );
 };
 
 export default ClientBooking;

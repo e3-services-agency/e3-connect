@@ -71,6 +71,8 @@ export type Database = {
           is_active: boolean
           max_bookings_per_day: number | null
           updated_at: string
+          client_team_id: string | null
+          team_member_id: string | null
         }
         Insert: {
           buffer_time_minutes?: number | null
@@ -80,6 +82,8 @@ export type Database = {
           is_active?: boolean
           max_bookings_per_day?: number | null
           updated_at?: string
+          client_team_id?: string | null
+          team_member_id?: string | null
         }
         Update: {
           buffer_time_minutes?: number | null
@@ -89,6 +93,8 @@ export type Database = {
           is_active?: boolean
           max_bookings_per_day?: number | null
           updated_at?: string
+          client_team_id?: string | null
+          team_member_id?: string | null
         }
         Relationships: []
       }
@@ -263,6 +269,86 @@ export type Database = {
             referencedRelation: "client_teams"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      team_member_business_hours: {
+        Row: {
+          team_member_id: string
+          created_at: string
+          friday_end: string | null
+          friday_start: string | null
+          id: string
+          is_active: boolean
+          monday_end: string | null
+          monday_start: string | null
+          saturday_end: string | null
+          saturday_start: string | null
+          sunday_end: string | null
+          sunday_start: string | null
+          thursday_end: string | null
+          thursday_start: string | null
+          time_format: string | null
+          timezone: string
+          tuesday_end: string | null
+          tuesday_start: string | null
+          updated_at: string
+          wednesday_end: string | null
+          wednesday_start: string | null
+        }
+        Insert: {
+          team_member_id: string
+          created_at?: string
+          friday_end?: string | null
+          friday_start?: string | null
+          id?: string
+          is_active?: boolean
+          monday_end?: string | null
+          monday_start?: string | null
+          saturday_end?: string | null
+          saturday_start?: string | null
+          sunday_end?: string | null
+          sunday_start?: string | null
+          thursday_end?: string | null
+          thursday_start?: string | null
+          time_format?: string | null
+          timezone?: string
+          tuesday_end?: string | null
+          tuesday_start?: string | null
+          updated_at?: string
+          wednesday_end?: string | null
+          wednesday_start?: string | null
+        }
+        Update: {
+          team_member_id?: string
+          created_at?: string
+          friday_end?: string | null
+          friday_start?: string | null
+          id?: string
+          is_active?: boolean
+          monday_end?: string | null
+          monday_start?: string | null
+          saturday_end?: string | null
+          saturday_start?: string | null
+          sunday_end?: string | null
+          sunday_start?: string | null
+          thursday_end?: string | null
+          thursday_start?: string | null
+          time_format?: string | null
+          timezone?: string
+          tuesday_end?: string | null
+          tuesday_start?: string | null
+          updated_at?: string
+          wednesday_end?: string | null
+          wednesday_start?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "team_member_business_hours_team_member_id_fkey"
+            columns: ["team_member_id"]
+            isOneToOne: true
+            referencedRelation: "team_members"
+            referencedColumns: ["id"]
+          }
         ]
       }
       client_teams: {
@@ -538,6 +624,8 @@ export type Database = {
           min_notice_hours: number | null
           start_date: string | null
           updated_at: string
+          client_team_id: string | null
+          team_member_id: string | null
         }
         Insert: {
           availability_type?: string
@@ -549,6 +637,8 @@ export type Database = {
           min_notice_hours?: number | null
           start_date?: string | null
           updated_at?: string
+          client_team_id?: string | null
+          team_member_id?: string | null
         }
         Update: {
           availability_type?: string
@@ -560,6 +650,8 @@ export type Database = {
           min_notice_hours?: number | null
           start_date?: string | null
           updated_at?: string
+          client_team_id?: string | null
+          team_member_id?: string | null
         }
         Relationships: []
       }
@@ -601,6 +693,7 @@ export type Database = {
       }
       team_members: {
         Row: {
+          booking_slug: string | null
           created_at: string
           email: string
           google_calendar_id: string | null
@@ -614,6 +707,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          booking_slug?: string | null
           created_at?: string
           email: string
           google_calendar_id?: string | null
@@ -627,6 +721,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          booking_slug?: string | null
           created_at?: string
           email?: string
           google_calendar_id?: string | null
@@ -649,6 +744,7 @@ export type Database = {
           },
         ]
       }
+      
     }
     Views: {
       public_booking_display: {

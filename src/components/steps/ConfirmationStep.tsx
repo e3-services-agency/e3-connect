@@ -13,14 +13,13 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
   const [showDescription, setShowDescription] = useState(false);
   const [meetingData, setMeetingData] = useState<any>(null);
   
-  // FIX: Resolve the filter from URL so useTeamData finds the right members
+  // Resolve the filter from URL so useTeamData finds the right members
   const activeFilter = useMemo(() => {
     const pathParts = window.location.pathname.split('/');
     const bookIndex = pathParts.indexOf('book');
     return bookIndex !== -1 ? pathParts[bookIndex + 1] : undefined;
   }, []);
 
-  // Use the filter to ensure teamMembers isn't empty
   const { teamMembers, loading } = useTeamData(activeFilter);
   
   // Map UUIDs from state back to full member objects
@@ -30,6 +29,11 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
   // Local state for editing booking details
   const [sessionTitle, setSessionTitle] = useState(() => {
     if (appState.bookingTitle) return appState.bookingTitle;
+    
+    // Better naming structure for individual bookings
+    if (appState.isIndividualBooking && appState.individualMember) {
+      return `Meeting with ${appState.individualMember.name}`;
+    }
     
     const getClientName = () => {
       const path = window.location.pathname;
@@ -67,7 +71,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       return;
     }
 
-    if (requiredTeam.length === 0) {
+    if (!appState.isIndividualBooking && requiredTeam.length === 0) {
       toast.error("No required team members found. Please go back and re-select your team.");
       return;
     }
@@ -81,8 +85,13 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       const endTime = new Date(startTime.getTime() + meetingDuration * 60000);
 
       const emailSet = new Set<string>();
-      requiredTeam.forEach(m => { if(m.email) emailSet.add(m.email.toLowerCase()) });
-      optionalTeam.forEach(m => { if(m.email) emailSet.add(m.email.toLowerCase()) });
+      
+      if (appState.isIndividualBooking && appState.individualMember?.email) {
+        emailSet.add(appState.individualMember.email.toLowerCase());
+      } else {
+        requiredTeam.forEach(m => { if(m.email) emailSet.add(m.email.toLowerCase()) });
+        optionalTeam.forEach(m => { if(m.email) emailSet.add(m.email.toLowerCase()) });
+      }
       
       if (appState.bookerEmail) {
         emailSet.add(appState.bookerEmail.toLowerCase());
@@ -92,7 +101,13 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       guestEmailsArray.forEach(email => emailSet.add(email.toLowerCase()));
 
       const attendeeEmails = Array.from(emailSet);
-      const organizerEmail = requiredTeam[0].email || 'admin@e3-services.com';
+      
+      let organizerEmail = 'admin@e3-services.com';
+      if (appState.isIndividualBooking && appState.individualMember?.email) {
+        organizerEmail = appState.individualMember.email;
+      } else if (requiredTeam.length > 0 && requiredTeam[0].email) {
+        organizerEmail = requiredTeam[0].email;
+      }
 
       const meetingTitle = `💼 ${sessionTitle.trim()} – ${sessionTopic.trim()}`;
       const meetingDescription = `${sessionTopic.trim()}\n\n${sessionDescription.trim()}`;
@@ -107,7 +122,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
           organizer_email: organizerEmail,
           attendee_emails: attendeeEmails,
           status: 'scheduled',
-          client_team_id: appState.clientTeamId
+          client_team_id: appState.clientTeamId || null
         })
         .select()
         .single();
@@ -126,9 +141,14 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
       calendarDescription += `🗓️ <b>Scheduling Details</b><br>`;
       calendarDescription += `Scheduled via: ${bookingSystemLink}<br>`;
       calendarDescription += `Booked by: ${appState.bookerEmail || 'N/A'}<br>`;
-      calendarDescription += `Required Attendee(s): ${requiredTeam.map(m => m.name).join(', ')}<br>`;
-      if (optionalTeam.length > 0) {
-        calendarDescription += `Optional Attendee(s): ${optionalTeam.map(m => m.name).join(', ')}<br>`;
+      
+      if (appState.isIndividualBooking) {
+        calendarDescription += `Meeting with: ${appState.individualMember?.name}<br>`;
+      } else {
+        calendarDescription += `Required Attendee(s): ${requiredTeam.map(m => m.name).join(', ')}<br>`;
+        if (optionalTeam.length > 0) {
+          calendarDescription += `Optional Attendee(s): ${optionalTeam.map(m => m.name).join(', ')}<br>`;
+        }
       }
 
       const eventData = {
@@ -188,7 +208,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
     });
   };
 
-  if (loading) return <div className="p-8 text-center text-e3-white/60">Loading meeting details...</div>; // Prevent empty state flashes
+  if (loading) return <div className="p-8 text-center text-e3-white/60">Loading meeting details...</div>;
   if (!appState.selectedTime) return null;
 
   const selectedTime = new Date(appState.selectedTime);
@@ -279,15 +299,25 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
               <span className="text-e3-azure font-medium">Contact:</span>
               <span className="text-e3-white sm:block">{appState.bookerEmail}</span>
             </div>
-            <div className="sm:col-span-2">
-              <span className="text-e3-azure font-medium">Required:</span>
-              <span className="text-e3-white ml-2">{requiredTeam.map(m => m.name).join(', ')}</span>
-            </div>
-            {optionalTeam.length > 0 && (
+            
+            {appState.isIndividualBooking ? (
               <div className="sm:col-span-2">
-                <span className="text-e3-azure font-medium">Optional:</span>
-                <span className="text-e3-white ml-2">{optionalTeam.map(m => m.name).join(', ')}</span>
+                <span className="text-e3-azure font-medium">Meeting with:</span>
+                <span className="text-e3-white ml-2">{appState.individualMember?.name}</span>
               </div>
+            ) : (
+              <>
+                <div className="sm:col-span-2">
+                  <span className="text-e3-azure font-medium">Required:</span>
+                  <span className="text-e3-white ml-2">{requiredTeam.map(m => m.name).join(', ')}</span>
+                </div>
+                {optionalTeam.length > 0 && (
+                  <div className="sm:col-span-2">
+                    <span className="text-e3-azure font-medium">Optional:</span>
+                    <span className="text-e3-white ml-2">{optionalTeam.map(m => m.name).join(', ')}</span>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -301,7 +331,9 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
 
   return (
     <div className="step animate-fade-in" aria-labelledby="step6-heading">
-      <h2 id="step6-heading" className="text-2xl font-bold text-e3-white text-center mb-8">6. Confirm Your Booking</h2>
+      <h2 id="step6-heading" className="text-2xl font-bold text-e3-white text-center mb-8">
+        {appState.isIndividualBooking ? '4. Confirm Your Booking' : '6. Confirm Your Booking'}
+      </h2>
 
       <div className="max-w-3xl mx-auto space-y-6">
         {/* Session Title */}
@@ -339,7 +371,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
         </div>
 
         {/* Meeting Details - WHEN & WHO */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className={`grid grid-cols-1 ${appState.isIndividualBooking ? '' : 'lg:grid-cols-2'} gap-6`}>
           {/* WHEN Section */}
           <div className="bg-e3-space-blue/70 p-4 sm:p-6 rounded-lg border border-e3-white/10">
             <div className="flex items-center gap-3 mb-4">
@@ -365,36 +397,38 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
           </div>
 
           {/* WHO Section */}
-          <div className="bg-e3-space-blue/70 p-4 sm:p-6 rounded-lg border border-e3-white/10">
-            <div className="flex items-center gap-3 mb-4">
-              <Users className="w-5 h-5 text-e3-emerald" />
-              <h3 className="text-lg font-semibold text-e3-emerald">WHO</h3>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <div className="text-sm font-medium text-e3-azure mb-1">Required Team</div>
-                <div className="space-y-1">
-                  {requiredTeam.map(m => (
-                    <div key={m.id} className="text-e3-white text-sm">
-                      {m.name} <span className="text-e3-white/60">({m.role})</span>
-                    </div>
-                  ))}
-                </div>
+          {!appState.isIndividualBooking && (
+            <div className="bg-e3-space-blue/70 p-4 sm:p-6 rounded-lg border border-e3-white/10">
+              <div className="flex items-center gap-3 mb-4">
+                <Users className="w-5 h-5 text-e3-emerald" />
+                <h3 className="text-lg font-semibold text-e3-emerald">WHO</h3>
               </div>
-              {optionalTeam.length > 0 && (
+              <div className="space-y-3">
                 <div>
-                  <div className="text-sm font-medium text-e3-azure mb-1">Optional Team</div>
+                  <div className="text-sm font-medium text-e3-azure mb-1">Required Team</div>
                   <div className="space-y-1">
-                    {optionalTeam.map(m => (
+                    {requiredTeam.map(m => (
                       <div key={m.id} className="text-e3-white text-sm">
                         {m.name} <span className="text-e3-white/60">({m.role})</span>
                       </div>
                     ))}
                   </div>
                 </div>
-              )}
+                {optionalTeam.length > 0 && (
+                  <div>
+                    <div className="text-sm font-medium text-e3-azure mb-1">Optional Team</div>
+                    <div className="space-y-1">
+                      {optionalTeam.map(m => (
+                        <div key={m.id} className="text-e3-white text-sm">
+                          {m.name} <span className="text-e3-white/60">({m.role})</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Booker Information */}

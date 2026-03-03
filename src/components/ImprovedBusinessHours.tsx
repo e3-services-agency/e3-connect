@@ -39,6 +39,7 @@ interface BusinessHours {
   saturday_end: string | null;
   sunday_start: string | null;
   sunday_end: string | null;
+  time_format?: '12h' | '24h';
 }
 
 const DAYS = [
@@ -76,6 +77,9 @@ const ImprovedBusinessHours: React.FC = () => {
       if (data) {
         setBusinessHours(data);
         convertToScheduleFormat(data);
+        if (data.time_format) {
+          setTimeFormat(data.time_format as '12h' | '24h');
+        }
       }
     } catch (error) {
       console.error('Error loading business hours:', error);
@@ -112,7 +116,10 @@ const ImprovedBusinessHours: React.FC = () => {
 
     setSaving(true);
     try {
-      const updatedHours: Partial<BusinessHours> = { ...businessHours };
+      const updatedHours: any = { 
+        ...businessHours,
+        time_format: timeFormat 
+      };
       
       DAYS.forEach(({ key }) => {
         const schedule = daySchedules[key];
@@ -120,11 +127,11 @@ const ImprovedBusinessHours: React.FC = () => {
         const endKey = `${key}_end` as keyof BusinessHours;
         
         if (schedule?.isOpen && schedule.slots.length > 0) {
-          (updatedHours as any)[startKey] = schedule.slots[0].start + ':00';
-          (updatedHours as any)[endKey] = schedule.slots[0].end + ':00';
+          updatedHours[startKey] = schedule.slots[0].start + ':00';
+          updatedHours[endKey] = schedule.slots[0].end + ':00';
         } else {
-          (updatedHours as any)[startKey] = null;
-          (updatedHours as any)[endKey] = null;
+          updatedHours[startKey] = null;
+          updatedHours[endKey] = null;
         }
       });
 
@@ -135,9 +142,10 @@ const ImprovedBusinessHours: React.FC = () => {
       if (error) throw error;
 
       toast({
-        title: "Business hours saved",
-        description: "Your availability has been updated successfully",
+        title: "Success",
+        description: "Global business hours updated successfully",
       });
+      loadBusinessHours();
     } catch (error) {
       console.error('Error saving business hours:', error);
       toast({
@@ -370,7 +378,7 @@ const ImprovedBusinessHours: React.FC = () => {
               disabled={saving}
               className="bg-e3-emerald hover:bg-e3-emerald/90 text-e3-space-blue font-medium"
             >
-              {saving ? 'Saving...' : 'Save'}
+              {saving ? 'Saving...' : 'Save Global Hours'}
             </Button>
           </div>
         </CardContent>

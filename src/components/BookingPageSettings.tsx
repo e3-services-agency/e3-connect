@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
-import { Monitor, Save, Globe } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Monitor, Save, Globe, Loader2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface BookingPageSettings {
+  id?: string;
   logo_url: string;
 }
 
@@ -11,30 +13,83 @@ const BookingPageSettings: React.FC = () => {
     logo_url: 'https://e3-services.com'
   });
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+
+  // Fetch settings on mount
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('booking_page_settings')
+          .select('*')
+          .limit(1)
+          .maybeSingle(); // Returns null if no rows exist instead of throwing
+
+        if (error) throw error;
+        
+        if (data) {
+          setSettings({
+            id: data.id,
+            logo_url: data.logo_url || 'https://e3-services.com'
+          });
+        }
+      } catch (error) {
+        console.error('Error fetching booking page settings:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchSettings();
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      // For now, just show success since the table types aren't ready
-      // This will work once the Supabase types are regenerated
-      console.log('Saving booking page settings:', settings);
+      if (settings.id) {
+        // Update existing row
+        const { error } = await supabase
+          .from('booking_page_settings')
+          .update({ logo_url: settings.logo_url })
+          .eq('id', settings.id);
+          
+        if (error) throw error;
+      } else {
+        // Insert new row if table was empty
+        const { data, error } = await supabase
+          .from('booking_page_settings')
+          .insert([{ logo_url: settings.logo_url }])
+          .select()
+          .single();
+          
+        if (error) throw error;
+        if (data) setSettings(prev => ({ ...prev, id: data.id }));
+      }
       
       toast({
         title: "Success",
-        description: "Booking page settings will be saved once database types are updated",
+        description: "Booking page settings saved successfully.",
       });
     } catch (error) {
       console.error('Error saving booking page settings:', error);
       toast({
         title: "Error", 
-        description: "Failed to save booking page settings",
+        description: "Failed to save booking page settings.",
         variant: "destructive",
       });
     } finally {
       setSaving(false);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="bg-e3-space-blue/30 rounded-lg p-6 border border-e3-white/10 flex items-center justify-center min-h-[200px]">
+        <Loader2 className="w-6 h-6 text-e3-emerald animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="bg-e3-space-blue/30 rounded-lg p-6 border border-e3-white/10">
@@ -79,7 +134,6 @@ const BookingPageSettings: React.FC = () => {
             </div>
           </div>
         </div>
-
 
         <div className="flex items-center gap-3">
           <button

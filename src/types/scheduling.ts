@@ -29,6 +29,9 @@ export interface AppState {
   // Booker information
   bookerName?: string;
   bookerEmail?: string;
+  // Booking type
+  isIndividualBooking?: boolean;
+  individualMember?: any;
 }
 
 export interface StepProps {

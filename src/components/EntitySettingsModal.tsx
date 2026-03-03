@@ -6,8 +6,9 @@ import { BusinessHoursEditor, BusinessHoursData, DaySchedule } from './forms/Bus
 import { supabase } from '../integrations/supabase/client';
 import { Button } from './ui/button';
 import { useToast } from '../hooks/use-toast';
-import { Save, AlertCircle } from 'lucide-react';
+import { Save, AlertCircle, Clock, Calendar, CheckSquare } from 'lucide-react';
 import { Switch } from './ui/switch';
+import { Card, CardContent } from './ui/card';
 
 interface EntitySettingsModalProps {
   isOpen: boolean;
@@ -32,7 +33,6 @@ const EntitySettingsModal: React.FC<EntitySettingsModalProps> = ({
   const [hasCustomHours, setHasCustomHours] = useState(false);
   const [hoursId, setHoursId] = useState<string | null>(null);
   
-  // Default structure for the editor
   const [hoursData, setHoursData] = useState<BusinessHoursData>({
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
     schedules: DAYS.reduce((acc, day) => ({
@@ -150,75 +150,89 @@ const EntitySettingsModal: React.FC<EntitySettingsModalProps> = ({
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="bg-e3-space-blue border-e3-white/20 text-e3-white max-w-4xl max-h-[90vh] overflow-y-auto p-0">
         
-        {/* Sticky Header so the admin always knows who they are editing */}
         <div className="sticky top-0 z-10 bg-e3-space-blue/95 border-b border-e3-white/10 p-6 backdrop-blur-md">
           <DialogTitle className="text-2xl font-bold text-e3-emerald">
             Rules & Overrides
           </DialogTitle>
           <p className="text-sm text-e3-white/60 mt-1">
             Configuring custom settings for <span className="font-bold text-e3-azure">{entityName}</span>. 
-            If an override is disabled, it will fall back to your Global Rules.
+            Each section saves independently and falls back to Global Rules when disabled.
           </p>
         </div>
 
-        <div className="p-6 space-y-12">
+        <div className="p-6 space-y-8">
           
           {/* SECTION 1: Business Hours */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-xl font-semibold text-e3-white">Custom Business Hours</h3>
-                <p className="text-sm text-e3-white/60">Override the default working hours</p>
+          <Card className="bg-e3-space-blue/30 border-e3-white/10 overflow-hidden">
+            <div className="p-6 border-b border-e3-white/5 bg-e3-white/5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Clock className="w-5 h-5 text-e3-azure" />
+                <div>
+                  <h3 className="text-lg font-bold text-e3-white">1. Business Hours</h3>
+                  <p className="text-xs text-e3-white/60">Define when this {entityType} is available for bookings</p>
+                </div>
               </div>
               <div className="flex items-center gap-2 bg-e3-space-blue/50 p-2 rounded-lg border border-e3-white/10">
                 <Switch checked={hasCustomHours} onCheckedChange={(checked) => {
                   if(!checked) handleDeleteHours();
                   else setHasCustomHours(true);
                 }} />
-                <span className="text-sm font-medium">{hasCustomHours ? 'Custom Active' : 'Use Global'}</span>
+                <span className="text-xs font-medium">{hasCustomHours ? 'Custom Active' : 'Use Global'}</span>
               </div>
             </div>
 
-            {hasCustomHours ? (
-              <div className="bg-e3-space-blue/30 p-6 rounded-lg border border-e3-azure/30">
-                {loading ? <div className="text-center py-4">Loading...</div> : (
-                  <>
-                    <BusinessHoursEditor value={hoursData} onChange={setHoursData} />
-                    <div className="flex justify-end mt-4">
-                      <Button onClick={handleSaveHours} disabled={saving} className="bg-e3-azure hover:bg-e3-azure/90 text-white">
-                        {saving ? 'Saving...' : 'Save Hours Override'}
-                      </Button>
-                    </div>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="bg-e3-space-blue/30 p-6 rounded-lg border border-e3-white/10 flex items-center gap-3 text-e3-white/60">
-                <AlertCircle className="w-5 h-5" />
-                <p>Currently using Global Business Hours. Toggle the switch above to create custom hours.</p>
-              </div>
-            )}
-          </section>
-
-          <div className="h-px bg-e3-white/10 w-full" />
+            <CardContent className="p-6">
+              {hasCustomHours ? (
+                <div className="space-y-4">
+                  {loading ? <div className="text-center py-4">Loading...</div> : (
+                    <>
+                      <BusinessHoursEditor value={hoursData} onChange={setHoursData} />
+                      <div className="flex justify-end pt-4 border-t border-e3-white/5">
+                        <Button onClick={handleSaveHours} disabled={saving} className="bg-e3-azure hover:bg-e3-azure/90 text-white font-medium">
+                          {saving ? 'Saving...' : 'Save Business Hours Only'}
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 text-e3-white/40 py-4">
+                  <AlertCircle className="w-5 h-5" />
+                  <p className="text-sm">Using Global Business Hours. Toggle the switch above to create an override.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* SECTION 2: Scheduling Window */}
-          <section>
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 px-2">
+              <Calendar className="w-5 h-5 text-e3-emerald" />
+              <div>
+                <h3 className="text-lg font-bold text-e3-white">2. Scheduling Window</h3>
+                <p className="text-xs text-e3-white/60">Limit how far in advance or how soon appointments can be booked</p>
+              </div>
+            </div>
             <SchedulingWindowSettings 
               clientTeamId={entityType === 'team' ? entityId : undefined}
               teamMemberId={entityType === 'member' ? entityId : undefined}
             />
-          </section>
+          </div>
 
-          <div className="h-px bg-e3-white/10 w-full" />
-
-          {/* SECTION 3: Appointment Settings */}
-          <section>
+          {/* SECTION 3: Appointment Rules */}
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 px-2">
+              <CheckSquare className="w-5 h-5 text-e3-emerald" />
+              <div>
+                <h3 className="text-lg font-bold text-e3-white">3. Appointment Rules</h3>
+                <p className="text-xs text-e3-white/60">Manage buffers, daily limits, and guest permissions</p>
+              </div>
+            </div>
             <BookedAppointmentSettings 
               clientTeamId={entityType === 'team' ? entityId : undefined}
               teamMemberId={entityType === 'member' ? entityId : undefined}
             />
-          </section>
+          </div>
 
         </div>
       </DialogContent>

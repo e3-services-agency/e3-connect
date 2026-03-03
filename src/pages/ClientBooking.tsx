@@ -95,7 +95,7 @@ const ClientBooking: React.FC = () => {
             requiredMembers: new Set([member.id]), // Pre-select them
             currentStep: 1, // Start directly on Date & Time
             totalSteps: 4,  // Skip the 'Team' step entirely
-            bookingTitle: `${member.name} x E3`,
+            bookingTitle: `Meeting with ${member.name}`,
             steps: [
               { name: 'DATE & TIME' },
               { name: 'YOUR INFO' },

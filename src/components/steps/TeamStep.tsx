@@ -87,7 +87,7 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
   }, [loading, teamMembers, onNext, onStateChange]);
 
   // --- 2. URL SYNC LOGIC (Update URL when user clicks checkboxes) ---
-  useEffect(() => {
+useEffect(() => {
     if (loading || teamMembers.length === 0) return;
 
     const params = new URLSearchParams(window.location.search);
@@ -95,25 +95,36 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
     // Don't sync if we are currently auto-jumping
     if (params.get('step') === 'availability') return;
 
-    // Convert IDs back to emails for the URL
+    // Convert IDs back to emails for the URL and sort them
+    // Sorting ensures that [UserA, UserB] and [UserB, UserA] are treated as the same string
     const reqEmails = Array.from(appState.requiredMembers)
       .map(id => teamMembers.find(m => m.id === id)?.email)
       .filter(Boolean)
+      .sort()
       .join(',');
       
     const optEmails = Array.from(appState.optionalMembers)
       .map(id => teamMembers.find(m => m.id === id)?.email)
       .filter(Boolean)
+      .sort()
       .join(',');
 
-    if (reqEmails) params.set('required', reqEmails);
-    else params.delete('required');
+    // Get current values from URL to compare
+    const currentReq = params.get('required') || '';
+    const currentOpt = params.get('optional') || '';
 
-    if (optEmails) params.set('optional', optEmails);
-    else params.delete('optional');
+    // ONLY update the URL if the state actually differs from what is currently in the URL
+    // This prevents the "freezing" loop
+    if (reqEmails !== currentReq || optEmails !== currentOpt) {
+      if (reqEmails) params.set('required', reqEmails);
+      else params.delete('required');
 
-    const newUrl = `${window.location.pathname}?${params.toString()}`;
-    window.history.replaceState({}, '', newUrl);
+      if (optEmails) params.set('optional', optEmails);
+      else params.delete('optional');
+
+      const newUrl = `${window.location.pathname}?${params.toString()}`;
+      window.history.replaceState({ ...window.history.state }, '', newUrl);
+    }
 
   }, [appState.requiredMembers, appState.optionalMembers, teamMembers, loading]);
 

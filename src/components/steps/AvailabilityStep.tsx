@@ -59,9 +59,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   const { teamMembers, loading: membersLoading } = useTeamData(activeFilter);
 
   const resolvedTeamId = useMemo(() => {
-    // If it's an individual, use default global business hours
     if (appState.isIndividualBooking) return undefined; 
-    
     if (!activeFilter) return undefined;
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeFilter);
     if (isUUID) return activeFilter;
@@ -77,10 +75,18 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   const { getWorkingHoursForDate, isWorkingDay } = useBusinessHours(resolvedTeamId);
 
-  // ... (keep the states like selectedDate, availableSlots, etc. here) ...
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [monthlyBusySchedule, setMonthlyBusySchedule] = useState<Record<string, BusySlot[]>>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [schedulingSettings, setSchedulingSettings] = useState<SchedulingWindowSettings | null>(null);
+  const [draggedMember, setDraggedMember] = useState<{ id: string, from: 'required' | 'optional' | 'pool' } | null>(null);
+  
+  const hasInitialized = useRef(false);
 
   const connectedMembers = useMemo(() => {
-    // If we are booking an individual, inject them directly as the only member
     if (appState.isIndividualBooking && appState.individualMember) {
       return [appState.individualMember]; 
     }
@@ -466,11 +472,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   };
 
   const handleNextWithLogs = () => {
-    console.log('--- Transitioning from AvailabilityStep to ConfirmationStep ---');
-    console.log('Current Required IDs (Set):', Array.from(appState.requiredMembers));
-    console.log('Current Optional IDs (Set):', Array.from(appState.optionalMembers));
-    console.log('Selected Date:', appState.selectedDate);
-    console.log('Selected Time:', appState.selectedTime);
     onNext();
   };
 
@@ -496,14 +497,12 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
           <Calendar className="w-6 h-6 text-e3-azure" />
           <div>
             <h2 className="text-xl font-bold text-e3-white">Select Date & Time</h2>
-            {/* HIDE this instruction for individual bookings */}
             {!appState.isIndividualBooking && (
               <p className="text-e3-white/60 text-sm">Drag members to change status</p>
             )}
           </div>
         </div>
 
-        {/* HIDE the available member pool for individual bookings */}
         {!appState.isIndividualBooking && (
           <div className="flex-grow min-w-0 w-full md:w-auto">
             {selectedMembers.pool.length > 0 && (
@@ -544,7 +543,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         )}
       </div>
 
-      {/* Conditionally show Required/Optional zones OR the Individual Badge */}
       {!appState.isIndividualBooking ? (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-none">
           <div 
@@ -646,7 +644,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
           </div>
         </div>
       ) : (
-        /* INDIVIDUAL BOOKING BADGE */
         <div className="flex items-center gap-3 p-4 bg-e3-space-blue/30 rounded-lg border border-e3-emerald/20 flex-none">
           {appState.individualMember?.google_photo_url ? (
             <img 

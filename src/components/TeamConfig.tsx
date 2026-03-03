@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Settings, Calendar, Users, Edit, Trash2, Loader, Save, X, Building, UserCog } from 'lucide-react';
+import { Plus, Settings, Calendar, Users, Edit, Trash2, Loader, Save, X, Building, UserCog, Share2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useTeamData } from '../hooks/useTeamData';
 import { GoogleCalendarService } from '../utils/googleCalendarService';
@@ -9,6 +9,7 @@ import AddMemberForm from './forms/AddMemberForm';
 import AddTeamForm from './forms/AddTeamForm';
 import TeamRolesManager from './TeamRolesManager';
 import EntitySettingsModal from './EntitySettingsModal';
+import EmbedModal from './EmbedModal';
 
 // Built-in slug generator so you don't need a separate utils file!
 const generateSlug = (text: string) => {
@@ -30,6 +31,10 @@ const TeamConfig: React.FC = () => {
   const [editData, setEditData] = useState<any>(null);
   const [availableRoles, setAvailableRoles] = useState<any[]>([]);
   const [settingsModal, setSettingsModal] = useState<{type: 'team' | 'member', id: string, name: string} | null>(null);
+  
+  // NEW: State for the embed modal
+  const [embedModal, setEmbedModal] = useState<{name: string, url: string} | null>(null);
+
   const { toast } = useToast();  
   const { teamMembers = [], clientTeams = [], loading, error, refetch } = useTeamData() || {};
 
@@ -532,14 +537,12 @@ const TeamConfig: React.FC = () => {
                             {editingMember !== member.id && (
                               <button
                                 onClick={() => {
-                                  const slug = member.booking_slug || generateSlug(member.name);
-                                  const bookingUrl = `${window.location.origin}/book/${slug}`;
-                                  navigator.clipboard.writeText(bookingUrl);
-                                  toast({ title: "Link Copied!", description: "Booking link copied to clipboard" });
+                                  const url = `${window.location.origin}/book/${member.booking_slug || generateSlug(member.name)}`;
+                                  setEmbedModal({ name: member.name, url });
                                 }}
-                                className="text-xs text-e3-azure hover:text-e3-white px-2 py-1 bg-e3-azure/10 hover:bg-e3-azure/20 rounded transition"
+                                className="flex items-center gap-1 text-xs text-e3-azure hover:text-e3-white px-2 py-1 bg-e3-azure/10 hover:bg-e3-azure/20 rounded transition"
                               >
-                                Copy Link
+                                <Share2 className="w-3 h-3" /> Share & Embed
                               </button>
                             )}
                           </div>
@@ -572,7 +575,7 @@ const TeamConfig: React.FC = () => {
                                 }}
                                 className="text-xs text-e3-emerald hover:text-e3-white px-2 py-1 bg-e3-emerald/10 hover:bg-e3-emerald/20 rounded transition flex-shrink-0"
                               >
-                                View
+                                View Page
                               </button>
                             </div>
                           )}
@@ -632,7 +635,7 @@ const TeamConfig: React.FC = () => {
               </div>
             )}
           </div>
-        )}
+         )}
 
         {/* Client Teams Tab */}
         {activeTab === 'teams' && (
@@ -750,16 +753,12 @@ const TeamConfig: React.FC = () => {
                               {editingTeam !== team.id && (
                                  <button
                                    onClick={() => {
-                                     const bookingUrl = `${window.location.origin}/book/${team.booking_slug || generateSlug(team.name)}`;
-                                     navigator.clipboard.writeText(bookingUrl);
-                                     toast({
-                                       title: "Link Copied!",
-                                       description: "Booking link copied to clipboard",
-                                     });
+                                     const url = `${window.location.origin}/book/${team.booking_slug || generateSlug(team.name)}`;
+                                     setEmbedModal({ name: team.name, url });
                                    }}
-                                   className="text-xs text-e3-azure hover:text-e3-white px-2 py-1 bg-e3-azure/10 hover:bg-e3-azure/20 rounded transition"
+                                   className="flex items-center gap-1 text-xs text-e3-azure hover:text-e3-white px-2 py-1 bg-e3-azure/10 hover:bg-e3-azure/20 rounded transition"
                                  >
-                                   Copy Link
+                                   <Share2 className="w-3 h-3" /> Share & Embed
                                  </button>
                               )}
                             </div>
@@ -791,7 +790,7 @@ const TeamConfig: React.FC = () => {
                                    }}
                                    className="text-xs text-e3-emerald hover:text-e3-white px-2 py-1 bg-e3-emerald/10 hover:bg-e3-emerald/20 rounded transition flex-shrink-0"
                                  >
-                                   View
+                                   View Page
                                  </button>
                               </div>
                             )}
@@ -884,6 +883,16 @@ const TeamConfig: React.FC = () => {
             entityType={settingsModal.type}
             entityId={settingsModal.id}
             entityName={settingsModal.name}
+          />
+        )}
+
+        {/* NEW: Embed/Share Modal */}
+        {embedModal && (
+          <EmbedModal
+            isOpen={!!embedModal}
+            onClose={() => setEmbedModal(null)}
+            entityName={embedModal.name}
+            bookingUrl={embedModal.url}
           />
         )}
       </div>

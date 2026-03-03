@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AppState } from '../types/scheduling';
 import ProgressBar from '../components/ProgressBar';
@@ -15,6 +15,10 @@ const ClientBooking: React.FC = () => {
   const navigate = useNavigate();
   const [clientTeam, setClientTeam] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // Check if we are rendering inside a website iframe
+  const searchParams = new URLSearchParams(window.location.search);
+  const isEmbedded = searchParams.get('embed') === 'true';
 
   const initialState: AppState = {
     currentStep: 1,
@@ -134,9 +138,10 @@ const ClientBooking: React.FC = () => {
     }
   };
 
-  const handleStateChange = (updates: Partial<AppState>) => {
+  // Using useCallback prevents the infinite state-update loop in child components
+  const handleStateChange = useCallback((updates: Partial<AppState>) => {
     setAppState(prev => ({ ...prev, ...updates }));
-  };
+  }, []);
 
   const renderStep = () => {
     const stepProps = {
@@ -188,9 +193,13 @@ const ClientBooking: React.FC = () => {
     );
   }
 
-    return (
-      <div className="min-h-screen bg-e3-space-blue p-4 sm:p-6">
-        <div className="max-w-4xl mx-auto">
+  return (
+    // Dynamic styling based on whether it is embedded or full screen
+    <div className={isEmbedded ? "bg-transparent w-full p-0 sm:p-2" : "min-h-screen bg-e3-space-blue p-4 sm:p-6"}>
+      <div className={isEmbedded ? "w-full mx-auto" : "max-w-4xl mx-auto"}>
+        
+        {/* Only show the header if it is NOT embedded */}
+        {!isEmbedded && (
           <header className="mb-6">
             <div className="flex items-center justify-between mb-4">
               <a 
@@ -211,19 +220,18 @@ const ClientBooking: React.FC = () => {
               <div className="w-12"></div> {/* Spacer for balance */}
             </div>
           </header>
-          
-          <div className="mb-4">
-            <ProgressBar 
-              appState={appState}
-            />
-          </div>
-          
-          <main className="px-2 sm:px-0">
-            {renderStep()}
-          </main>
+        )}
+        
+        <div className="mb-4">
+          <ProgressBar appState={appState} />
         </div>
+        
+        <main className={isEmbedded ? "px-0" : "px-2 sm:px-0"}>
+          {renderStep()}
+        </main>
       </div>
-    );
+    </div>
+  );
 };
 
 export default ClientBooking;

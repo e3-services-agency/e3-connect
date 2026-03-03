@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { StepProps } from '../../types/scheduling';
 import { useTeamData } from '../../hooks/useTeamData';
 import { Loader } from 'lucide-react';
@@ -9,14 +9,15 @@ interface TeamStepProps extends StepProps {
 
 const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateChange, clientTeamFilter }) => {
 
-  // --- ADD THESE LOGS ---
   console.log('RENDER TeamStep');
   console.log(' - Filter Prop:', clientTeamFilter);
   const { teamMembers, loading, error: dataError } = useTeamData(clientTeamFilter);
   console.log(' - Hook State:', { loading, count: teamMembers.length });
-  // ----------------------
 
   const [error, setError] = useState('');
+  
+  // --- BUG FIX: Add a ref to prevent infinite URL-sync loops ---
+  const hasSyncedFromUrl = useRef(false);
 
   // --- HELPER: ROBUST FILTER LOGIC ---
   const getFilteredMembers = () => {
@@ -38,25 +39,27 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
   };
 
   const filteredTeamMembers = getFilteredMembers();
+  
+  // --- BUG FIX: Calculate if all are selected for the toggle ---
+  const allFilteredSelected = filteredTeamMembers.length > 0 && 
+    filteredTeamMembers.every(m => appState.requiredMembers.has(m.id));
 
   // --- 1. INITIALIZATION LOGIC (Parse URL Params) ---
   useEffect(() => {
-    // Wait for team members to load
-    if (loading || teamMembers.length === 0) return;
+    // BUG FIX: Added `hasSyncedFromUrl.current` so this only runs ONCE
+    if (loading || teamMembers.length === 0 || hasSyncedFromUrl.current) return;
 
     const params = new URLSearchParams(window.location.search);
     const requiredParam = params.get('required');
     const optionalParam = params.get('optional');
     const stepParam = params.get('step');
 
-    // Helper to find member by email
     const findMember = (email: string) => 
       teamMembers.find(m => m.email.toLowerCase() === email.trim().toLowerCase());
 
     const newRequired = new Set<string>();
     const newOptional = new Set<string>();
 
-    // Parse 'required' emails (ALWAYS do this if present)
     if (requiredParam) {
       decodeURIComponent(requiredParam).split(',').forEach(email => {
         const m = findMember(email);
@@ -64,7 +67,6 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
       });
     }
 
-    // Parse 'optional' emails (ALWAYS do this if present)
     if (optionalParam) {
       decodeURIComponent(optionalParam).split(',').forEach(email => {
         const m = findMember(email);
@@ -72,31 +74,29 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
       });
     }
 
-    // If we found members in the URL, update the checkbox state
     if (newRequired.size > 0 || newOptional.size > 0) {
       onStateChange({
         requiredMembers: newRequired,
         optionalMembers: newOptional
       });
 
-      // CHECK: Only auto-jump to next step if URL explicitly asks for it
       if (stepParam === 'availability') {
         onNext(); 
       }
     }
+    
+    // BUG FIX: Lock the initialization so it doesn't fight the user's clicks
+    hasSyncedFromUrl.current = true;
   }, [loading, teamMembers, onNext, onStateChange]);
 
   // --- 2. URL SYNC LOGIC (Update URL when user clicks checkboxes) ---
-useEffect(() => {
+  useEffect(() => {
     if (loading || teamMembers.length === 0) return;
 
     const params = new URLSearchParams(window.location.search);
     
-    // Don't sync if we are currently auto-jumping
     if (params.get('step') === 'availability') return;
 
-    // Convert IDs back to emails for the URL and sort them
-    // Sorting ensures that [UserA, UserB] and [UserB, UserA] are treated as the same string
     const reqEmails = Array.from(appState.requiredMembers)
       .map(id => teamMembers.find(m => m.id === id)?.email)
       .filter(Boolean)
@@ -109,12 +109,9 @@ useEffect(() => {
       .sort()
       .join(',');
 
-    // Get current values from URL to compare
     const currentReq = params.get('required') || '';
     const currentOpt = params.get('optional') || '';
 
-    // ONLY update the URL if the state actually differs from what is currently in the URL
-    // This prevents the "freezing" loop
     if (reqEmails !== currentReq || optEmails !== currentOpt) {
       if (reqEmails) params.set('required', reqEmails);
       else params.delete('required');
@@ -131,12 +128,20 @@ useEffect(() => {
 
   // --- HANDLERS ---
 
-  const handleSelectAll = () => {
-    const allMemberIds = filteredTeamMembers.map(m => m.id);
-    onStateChange({
-      requiredMembers: new Set(allMemberIds),
-      optionalMembers: new Set<string>()
-    });
+  // BUG FIX: Upgraded to toggle on/off instead of just selecting all
+  const handleToggleAll = () => {
+    if (allFilteredSelected) {
+      onStateChange({
+        requiredMembers: new Set<string>(),
+        optionalMembers: new Set<string>()
+      });
+    } else {
+      const allMemberIds = filteredTeamMembers.map(m => m.id);
+      onStateChange({
+        requiredMembers: new Set(allMemberIds),
+        optionalMembers: new Set<string>()
+      });
+    }
     setError('');
   };
 
@@ -219,10 +224,13 @@ useEffect(() => {
         <label className="flex items-center cursor-pointer">
           <input
             type="checkbox"
-            onChange={handleSelectAll}
+            checked={allFilteredSelected}
+            onChange={handleToggleAll}
             className="form-checkbox h-5 w-5 text-e3-emerald bg-e3-space-blue border-e3-emerald rounded focus:ring-e3-emerald mr-3"
           />
-          <span className="text-e3-emerald font-medium">Select All Team Members as Required</span>
+          <span className="text-e3-emerald font-medium">
+            {allFilteredSelected ? 'Unselect All Team Members' : 'Select All Team Members as Required'}
+          </span>
         </label>
       </div>
       

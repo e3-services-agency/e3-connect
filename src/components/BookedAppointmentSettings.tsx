@@ -259,6 +259,7 @@ const BookedAppointmentSettings: React.FC<BookedAppointmentSettingsProps> = ({ c
             >
               {saving ? 'Saving...' : 'Save Appointment Settings'}
             </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

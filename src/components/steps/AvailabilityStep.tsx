@@ -206,7 +206,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   }, [currentMonth]);
 
   useEffect(() => {
-    useEffect(() => {
     const loadSchedulingSettings = async () => {
       try {
         let foundSettings = null;

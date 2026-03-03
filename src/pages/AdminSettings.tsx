@@ -1,49 +1,59 @@
-
 import React, { useState } from 'react';
-import { Settings, Users, Clock, Mail, Calendar, CalendarDays, CheckSquare, Home, Monitor } from 'lucide-react';
+import { Settings, Users, Mail, Calendar, Home, Monitor, Globe } from 'lucide-react';
 import AdminEmailSetup from '../components/AdminEmailSetup';
 import GoogleCalendarSetup from '../components/GoogleCalendarSetup';
 import TeamConfig from '../components/TeamConfig';
-import BusinessHoursManager from '../components/BusinessHoursManager';
+import ImprovedBusinessHours from '../components/ImprovedBusinessHours';
 import SchedulingWindowSettings from '../components/SchedulingWindowSettings';
 import BookedAppointmentSettings from '../components/BookedAppointmentSettings';
 import LandingPageSettings from '../components/LandingPageSettings';
 import BookingPageSettings from '../components/BookingPageSettings';
 
 const AdminSettings: React.FC = () => {
-  const [activeTab, setActiveTab] = useState('landing');
+  const [activeTab, setActiveTab] = useState('team');
 
+  // We reduced the tabs to make the UI much more intuitive
   const tabs = [
+    { id: 'team', label: 'Team Management', icon: Users },
+    { id: 'global-rules', label: 'Global Booking Rules', icon: Globe },
     { id: 'landing', label: 'Landing Page', icon: Home },
     { id: 'booking', label: 'Booking Pages', icon: Monitor },
-    { id: 'team', label: 'Team Management', icon: Users },
-    { id: 'availability', label: 'Availability', icon: Clock },
-    { id: 'scheduling', label: 'Scheduling Window', icon: CalendarDays },
-    { id: 'appointments', label: 'Appointment Settings', icon: CheckSquare },
-    { id: 'calendar', label: 'Calendar Setup', icon: Calendar },
-    { id: 'email', label: 'Email Setup', icon: Mail }
+    { id: 'calendar', label: 'Google Calendar', icon: Calendar },
+    { id: 'email', label: 'Admin Email', icon: Mail }
   ];
 
   const renderTabContent = () => {
     switch (activeTab) {
+      case 'team':
+        return <TeamConfig />;
+      case 'global-rules':
+        return (
+          <div className="space-y-8 animate-fade-in">
+            <div className="border-b border-e3-white/10 pb-6 mb-6">
+              <h2 className="text-2xl font-bold text-e3-emerald mb-2">Global Booking Rules</h2>
+              <p className="text-e3-white/70">
+                These are the default settings applied to all client teams and team members. 
+                You can override these for specific individuals using the ⚙️ icon in Team Management.
+              </p>
+            </div>
+            {/* Stacked Global Settings */}
+            <ImprovedBusinessHours />
+            <div className="h-px w-full bg-e3-white/10 my-8" />
+            <SchedulingWindowSettings />
+            <div className="h-px w-full bg-e3-white/10 my-8" />
+            <BookedAppointmentSettings />
+          </div>
+        );
       case 'landing':
         return <LandingPageSettings />;
       case 'booking':
         return <BookingPageSettings />;
-      case 'team':
-        return <TeamConfig />;
-      case 'availability':
-        return <BusinessHoursManager />;
-      case 'scheduling':
-        return <SchedulingWindowSettings />;
-      case 'appointments':
-        return <BookedAppointmentSettings />;
       case 'calendar':
         return <GoogleCalendarSetup />;
       case 'email':
         return <AdminEmailSetup />;
       default:
-        return <LandingPageSettings />;
+        return <TeamConfig />;
     }
   };
 
@@ -67,7 +77,7 @@ const AdminSettings: React.FC = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-3 rounded-lg transition text-sm font-medium ${
+                  className={`flex items-center gap-2 px-4 py-3 rounded-lg transition text-sm font-medium flex-1 justify-center ${
                     activeTab === tab.id
                       ? 'bg-e3-emerald text-e3-space-blue'
                       : 'text-e3-white/70 hover:text-e3-white hover:bg-e3-white/5'

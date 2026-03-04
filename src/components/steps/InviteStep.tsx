@@ -39,7 +39,7 @@ const InviteStep: React.FC<StepProps> = ({ appState, onNext, onBack, onStateChan
   };
 
   return (
-    <div className="step animate-fade-in" aria-labelledby="step5-heading">
+    <div className="step animate-fade-in pb-28" aria-labelledby="step5-heading">
       <h2 id="step5-heading" className="text-2xl font-bold text-e3-white text-center mb-2">Invite Guests (Optional)</h2>
       <p className="text-e3-white/70 mb-6 text-center">Add email addresses for anyone else you'd like to invite, or click "Next" to proceed without guests.</p>
       
@@ -66,30 +66,22 @@ const InviteStep: React.FC<StepProps> = ({ appState, onNext, onBack, onStateChan
         className="focusable w-full p-3 bg-e3-space-blue border border-e3-azure rounded-lg focus:ring-2 focus:ring-e3-azure outline-none text-e3-white placeholder-e3-white/50"
       />
       
-      <div className="mt-8 flex justify-between gap-4 pb-24 sm:pb-0">
-        <button 
-          onClick={onBack} 
-          className="py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
-        >
-          Back
-        </button>
-        {/* Hidden on mobile, handled by sticky CTA below */}
-        <button 
-          onClick={onNext} 
-          className="hidden sm:block cta"
-        >
-          Next: Review Booking
-        </button>
-      </div>
-
-      {/* Sticky CTA for mobile */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-sm border-t border-e3-white/10 sm:hidden z-50">
-        <button 
-          onClick={onNext} 
-          className="w-full cta"
-        >
-          Next: Review Booking
-        </button>
+      {/* Unified Sticky Footer (Mobile & Desktop) */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-md border-t border-e3-white/10 z-50">
+        <div className="max-w-3xl mx-auto flex flex-col sm:flex-row justify-between gap-3 sm:gap-4">
+          <button 
+            onClick={onBack} 
+            className="order-2 sm:order-1 w-full sm:w-auto py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
+          >
+            Back
+          </button>
+          <button 
+            onClick={onNext} 
+            className="order-1 sm:order-2 w-full sm:w-auto cta"
+          >
+            Next: Review Booking
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -32,7 +32,7 @@ const BookerInfoStep: React.FC<StepProps> = ({ appState, onNext, onBack, onState
   };
 
   return (
-    <div className="step animate-fade-in max-w-md mx-auto" aria-labelledby="step4-heading">
+    <div className="step animate-fade-in max-w-md mx-auto pb-28" aria-labelledby="step4-heading">
       <div className="text-center mb-8">
         <div className="w-16 h-16 bg-e3-emerald/20 rounded-full flex items-center justify-center mx-auto mb-4">
           <User className="w-8 h-8 text-e3-emerald" />
@@ -74,30 +74,22 @@ const BookerInfoStep: React.FC<StepProps> = ({ appState, onNext, onBack, onState
         </div>
       </div>
       
-      <div className="mt-8 flex justify-between gap-4 pb-24 sm:pb-0">
-        <button 
-          onClick={onBack} 
-          className="py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
-        >
-          Back
-        </button>
-        {/* Hidden on mobile, handled by sticky CTA below */}
-        <button 
-          onClick={handleNext}
-          className="hidden sm:block cta"
-        >
-          Next: Add Guests
-        </button>
-      </div>
-
-      {/* Sticky CTA for mobile */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-sm border-t border-e3-white/10 sm:hidden z-50">
-        <button 
-          onClick={handleNext}
-          className="w-full cta"
-        >
-          Next: Add Guests
-        </button>
+      {/* Unified Sticky Footer (Mobile & Desktop) */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-md border-t border-e3-white/10 z-50">
+        <div className="max-w-md mx-auto flex flex-col sm:flex-row justify-between gap-3 sm:gap-4">
+          <button 
+            onClick={onBack} 
+            className="order-2 sm:order-1 w-full sm:w-auto py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
+          >
+            Back
+          </button>
+          <button 
+            onClick={handleNext}
+            className="order-1 sm:order-2 w-full sm:w-auto cta"
+          >
+            Next: Add Guests
+          </button>
+        </div>
       </div>
     </div>
   );

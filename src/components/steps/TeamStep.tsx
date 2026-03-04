@@ -216,7 +216,7 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
   }
 
   return (
-    <div className="step animate-fade-in" aria-labelledby="step1-heading">
+    <div className="step animate-fade-in pb-28" aria-labelledby="step1-heading">
       <h2 id="step1-heading" className="sub-heading mb-6">1. Choose Team Members</h2>
       
       {/* Select All Checkbox */}
@@ -332,17 +332,14 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
         })}
       </div>
       {error && <div className="text-e3-flame text-sm mt-4">{error}</div>}
-      <div className="mt-8 flex justify-end">
-        <button onClick={confirmTeamSelection} className="cta focusable">
-          Find Availability
-        </button>
-      </div>
       
-      {/* Sticky CTA for mobile */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-sm border-t border-e3-white/10 sm:hidden z-50">
-        <button onClick={confirmTeamSelection} className="w-full cta focusable">
-          Find Availability
-        </button>
+      {/* Unified Sticky Footer (Mobile & Desktop) */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-md border-t border-e3-white/10 z-50">
+        <div className="max-w-3xl mx-auto flex flex-col sm:flex-row justify-end gap-3 sm:gap-4">
+          <button onClick={confirmTeamSelection} className="w-full sm:w-auto cta focusable">
+            Find Availability
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,4 +1,3 @@
-
 import React, { useRef, KeyboardEvent, useState, useEffect } from 'react';
 import { StepProps } from '../../types/scheduling';
 
@@ -64,19 +63,20 @@ const InviteStep: React.FC<StepProps> = ({ appState, onNext, onBack, onStateChan
         type="email"
         placeholder="Enter an email and press Enter"
         onKeyDown={handleEmailInput}
-        className="focusable w-full p-3 bg-e3-space-blue border border-e3-azure rounded-lg focus:ring-2 focus:ring-e3-azure outline-none"
+        className="focusable w-full p-3 bg-e3-space-blue border border-e3-azure rounded-lg focus:ring-2 focus:ring-e3-azure outline-none text-e3-white placeholder-e3-white/50"
       />
       
-      <div className="mt-8 flex flex-col sm:flex-row justify-between gap-4">
+      <div className="mt-8 flex justify-between gap-4 pb-24 sm:pb-0">
         <button 
           onClick={onBack} 
-          className="order-2 sm:order-1 py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
+          className="py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
         >
           Back
         </button>
+        {/* Hidden on mobile, handled by sticky CTA below */}
         <button 
           onClick={onNext} 
-          className="order-1 sm:order-2 cta"
+          className="hidden sm:block cta"
         >
           Next: Review Booking
         </button>

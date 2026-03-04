@@ -74,16 +74,17 @@ const BookerInfoStep: React.FC<StepProps> = ({ appState, onNext, onBack, onState
         </div>
       </div>
       
-      <div className="mt-8 flex flex-col sm:flex-row justify-between gap-4">
+      <div className="mt-8 flex justify-between gap-4 pb-24 sm:pb-0">
         <button 
           onClick={onBack} 
-          className="order-2 sm:order-1 py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
+          className="py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
         >
           Back
         </button>
+        {/* Hidden on mobile, handled by sticky CTA below */}
         <button 
           onClick={handleNext}
-          className="order-1 sm:order-2 cta"
+          className="hidden sm:block cta"
         >
           Next: Add Guests
         </button>

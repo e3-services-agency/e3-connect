@@ -63,8 +63,7 @@ const InviteStep: React.FC<StepProps> = ({ appState, onNext, onBack, onStateChan
         type="email"
         placeholder="Enter an email and press Enter"
         onKeyDown={handleEmailInput}
-        className="focusable w-full p-3 bg-e3-space-blue border border-e3-azure rounded-lg focus:ring-2 focus:ring-e3-azure outline-none text-e3-white placeholder-e3-white/50"
-      />
+        className="focusable w-full p-3 mb-10 bg-e3-space-blue border border-e3-azure rounded-lg focus:ring-2 focus:ring-e3-azure outline-none text-e3-white placeholder-e3-white/50"      />
       
       {/* Unified Sticky Footer (Mobile & Desktop) */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-md border-t border-e3-white/10 z-50">

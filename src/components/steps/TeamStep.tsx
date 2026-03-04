@@ -344,6 +344,7 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
           </button>
         </div>
       </div>
+    </div>
   );
 };
 

@@ -216,7 +216,7 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
   }
 
   return (
-    <div className="step animate-fade-in" aria-labelledby="step1-heading">
+    <div className="step animate-fade-in pb-48" aria-labelledby="step1-heading">
       <h2 id="step1-heading" className="sub-heading mb-6">1. Choose Team Members</h2>
       
       {/* Select All Checkbox */}
@@ -240,14 +240,14 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
           const isOptional = appState.optionalMembers.has(member.id);
           
           return (
-            <div key={member.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-e3-space-blue/70 rounded-lg border border-e3-white/10">
+            <div key={member.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 bg-e3-space-blue/70 rounded-lg border border-e3-white/10">
               <div className="flex items-center gap-3 flex-1">
                 {/* Profile Photo */}
                 {member.google_photo_url ? (
                   <img 
                     src={member.google_photo_url} 
                     alt={member.name}
-                    className="w-12 h-12 rounded-full border-2 border-e3-azure/30 object-cover"
+                    className="w-10 h-10 rounded-full border-2 border-e3-azure/30 object-cover"
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';
                       const fallback = e.currentTarget.nextElementSibling as HTMLElement;
@@ -257,7 +257,7 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
                     crossOrigin="anonymous"
                   />
                 ) : null}
-                <div className={`w-12 h-12 rounded-full bg-e3-azure/20 flex items-center justify-center text-e3-azure font-bold border-2 border-e3-azure/30 ${member.google_photo_url ? 'hidden' : ''}`}>
+                <div className={`w-10 h-10 rounded-full bg-e3-azure/20 flex items-center justify-center text-e3-azure text-sm font-bold border-2 border-e3-azure/30 ${member.google_photo_url ? 'hidden' : ''}`}>
                   {member.name.split(' ').map(n => n.charAt(0)).join('')}
                 </div>
                 
@@ -332,17 +332,18 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
         })}
       </div>
       {error && <div className="text-e3-flame text-sm mt-4">{error}</div>}
-      <div className="mt-8 flex justify-end">
-        <button onClick={confirmTeamSelection} className="cta focusable">
-          Find Availability
-        </button>
-      </div>
       
-      {/* Sticky CTA for mobile */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-sm border-t border-e3-white/10 sm:hidden z-50">
-        <button onClick={confirmTeamSelection} className="w-full cta focusable">
-          Find Availability
-        </button>
+      {/* Unified Sticky Footer - Fixed at bottom-0 like Availability Step */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-md border-t border-e3-white/10 z-50">
+        <div className="max-w-3xl mx-auto flex flex-col sm:flex-row justify-between gap-3 sm:gap-4">
+          <div className="hidden sm:block"></div> {/* Spacer to keep primary button on the right */}
+          <button 
+            onClick={confirmTeamSelection} 
+            className="w-full sm:w-auto cta"
+          >
+            Find Availability
+          </button>
+        </div>
       </div>
     </div>
   );

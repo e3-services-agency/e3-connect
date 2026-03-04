@@ -32,12 +32,12 @@ const BookerInfoStep: React.FC<StepProps> = ({ appState, onNext, onBack, onState
   };
 
   return (
-    <div className="step animate-fade-in max-w-md mx-auto" aria-labelledby="step4-heading">
-      <div className="text-center mb-8">
-        <div className="w-16 h-16 bg-e3-emerald/20 rounded-full flex items-center justify-center mx-auto mb-4">
-          <User className="w-8 h-8 text-e3-emerald" />
+    <div className="step animate-fade-in max-w-md mx-auto pb-48" aria-labelledby="step4-heading">
+      <div className="text-center mb-6">
+        <div className="w-12 h-12 bg-e3-emerald/20 rounded-full flex items-center justify-center mx-auto mb-3">
+          <User className="w-6 h-6 text-e3-emerald" />
         </div>
-        <h2 id="step4-heading" className="text-2xl font-bold text-e3-white mb-2">
+        <h2 id="step4-heading" className="text-xl sm:text-2xl font-bold text-e3-white mb-2">
           Your Information
         </h2>
         <p className="text-e3-white/70">
@@ -74,29 +74,22 @@ const BookerInfoStep: React.FC<StepProps> = ({ appState, onNext, onBack, onState
         </div>
       </div>
       
-      <div className="mt-8 flex flex-col sm:flex-row justify-between gap-4">
-        <button 
-          onClick={onBack} 
-          className="order-2 sm:order-1 py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
-        >
-          Back
-        </button>
-        <button 
-          onClick={handleNext}
-          className="order-1 sm:order-2 cta"
-        >
-          Next: Add Guests
-        </button>
-      </div>
-
-      {/* Sticky CTA for mobile */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-sm border-t border-e3-white/10 sm:hidden z-50">
-        <button 
-          onClick={handleNext}
-          className="w-full cta"
-        >
-          Next: Add Guests
-        </button>
+      {/* Unified Sticky Footer (Mobile & Desktop) */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-md border-t border-e3-white/10 z-50">
+        <div className="max-w-3xl mx-auto flex flex-col sm:flex-row justify-between gap-3 sm:gap-4">
+          <button 
+            onClick={onBack} 
+            className="order-2 sm:order-1 w-full sm:w-auto py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
+          >
+            Back
+          </button>
+          <button 
+            onClick={handleNext}
+            className="order-1 sm:order-2 w-full sm:w-auto cta"
+          >
+            Next: Add Guests
+          </button>
+        </div>
       </div>
     </div>
   );

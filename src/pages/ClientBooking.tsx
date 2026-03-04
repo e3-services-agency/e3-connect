@@ -36,8 +36,8 @@ const ClientBooking: React.FC = () => {
     clientTeamId: '',
     steps: [
       { name: 'TEAM' },
-      { name: 'DATE & TIME' },
-      { name: 'YOUR INFO' },
+      { name: 'WHEN' },
+      { name: 'INFO' },
       { name: 'GUESTS' },
       { name: 'CONFIRM' }
     ]
@@ -59,50 +59,43 @@ const ClientBooking: React.FC = () => {
       try {
         console.log('Fetching entity for slug:', clientSlug);
         
-        // 1. Try fetching Client Team first
-        const { data: team, error: teamError } = await supabase
-          .from('client_teams')
-          .select('*')
-          .eq('booking_slug', clientSlug)
-          .eq('is_active', true)
-          .maybeSingle(); 
+        // Use our secure backend function instead of querying tables directly!
+        const { data, error } = await supabase.rpc('resolve_booking_slug', { 
+          lookup_slug: clientSlug 
+        });
 
-        if (team) {
-          console.log('Found team:', team);
-          setClientTeam(team);
+        if (error) throw error;
+
+        // 1. Handle Client Team
+        if (data && data.type === 'team') {
+          console.log('Found team:', data);
+          setClientTeam(data);
           setAppState(prev => ({ 
             ...prev, 
-            clientTeamId: team.id,
-            bookingTitle: `${team.name} x E3`,
+            clientTeamId: data.id,
+            bookingTitle: `${data.name} x E3`,
             isIndividualBooking: false
           }));
           setLoading(false);
           return;
         }
 
-        // 2. Fallback: Try fetching Individual Member
-        const { data: member, error: memberError } = await supabase
-          .from('team_members')
-          .select('*')
-          .eq('booking_slug', clientSlug)
-          .eq('is_active', true)
-          .maybeSingle();
-
-        if (member) {
-          console.log('Found individual member:', member);
-          setClientTeam(member); // We store the member here so the page doesn't show "Client Not Found"
+        // 2. Handle Individual Member
+        if (data && data.type === 'member') {
+          console.log('Found individual member:', data);
+          setClientTeam(data); 
           
           setAppState(prev => ({
             ...prev,
             isIndividualBooking: true,
-            individualMember: member,
-            requiredMembers: new Set([member.id]), // Pre-select them
-            currentStep: 1, // Start directly on Date & Time
-            totalSteps: 4,  // Skip the 'Team' step entirely
-            bookingTitle: `Meeting with ${member.name}`,
+            individualMember: data,
+            requiredMembers: new Set([data.id]), 
+            currentStep: 1, 
+            totalSteps: 4,  
+            bookingTitle: `Meeting with ${data.name}`,
             steps: [
-              { name: 'DATE & TIME' },
-              { name: 'YOUR INFO' },
+              { name: 'WHEN' },
+              { name: 'INFO' },
               { name: 'GUESTS' },
               { name: 'CONFIRM' }
             ]
@@ -111,15 +104,13 @@ const ClientBooking: React.FC = () => {
           return;
         }
 
-        // Neither found
+        // Neither found (slug is invalid or inactive)
         console.log('No team or individual found for slug:', clientSlug);
         setLoading(false);
 
       } catch (error) {
         console.error('An unexpected error occurred while loading:', error);
         navigate('/');
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -186,7 +177,7 @@ const ClientBooking: React.FC = () => {
     return (
       <div className="min-h-screen bg-e3-space-blue p-6 flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-e3-flame mb-4">Client Not Found</h1>
+          <h1 className="text-2xl font-bold text-e3-flame mb-4">Member/Client Not Found</h1>
           <p className="text-e3-white/80">The requested client booking page could not be found.</p>
         </div>
       </div>
@@ -198,26 +189,50 @@ const ClientBooking: React.FC = () => {
     <div className={isEmbedded ? "bg-transparent w-full p-0 sm:p-2" : "min-h-screen bg-e3-space-blue p-4 sm:p-6"}>
       <div className={isEmbedded ? "w-full mx-auto" : "max-w-4xl mx-auto"}>
         
-        {/* Only show the header if it is NOT embedded */}
         {!isEmbedded && (
-          <header className="mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <a 
-                href={`https://e3-services.com?utm_source=booking&utm_medium=referral&utm_campaign=${clientSlug}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <img 
-                  src={e3Logo} 
-                  alt="E3 Logo" 
-                  className="h-12 hover:opacity-90 transition-opacity cursor-pointer"
-                />
-              </a>
-              <div className="text-center flex-1">
-                <h1 className="text-3xl font-bold text-e3-emerald">Schedule a Meeting</h1>
-                <p className="text-e3-white/60 text-sm mt-1">Follow the steps below to book your session.</p>
+          <header className="mb-4 sm:mb-6 mt-2">
+            <div className="flex flex-row items-center justify-between gap-3 sm:gap-6 px-1">
+              {/* Logo - Significantly smaller on mobile */}
+              <div className="flex-none">
+                <a 
+                  href={`https://e3-services.com?utm_source=booking&utm_medium=referral&utm_campaign=${clientSlug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img 
+                    src={e3Logo} 
+                    alt="E3 Logo" 
+                    className="h-6 sm:h-10 hover:opacity-90 transition-opacity cursor-pointer"
+                  />
+                </a>
               </div>
-              <div className="w-12"></div> {/* Spacer for balance */}
+              
+              <div className="flex-1 min-w-0 text-left sm:text-center">
+                {/* Title - Compact size to prevent layout breaks */}
+                <h1 className="text-base sm:text-2xl font-bold text-e3-emerald leading-tight truncate">
+                  {appState.isIndividualBooking ? `Meeting with ${appState.individualMember?.name}` : 'Schedule a Meeting'}
+                </h1>
+                <p className="text-e3-white/60 text-[10px] sm:text-xs">Follow the steps below to book.</p>
+              </div>
+
+              {/* Profile Photo - Compacted for single-row layout */}
+              {appState.isIndividualBooking && (
+                <div className="flex-none">
+                  {appState.individualMember?.google_photo_url ? (
+                    <img 
+                      src={appState.individualMember.google_photo_url} 
+                      alt={appState.individualMember.name} 
+                      className="w-8 h-8 sm:w-12 sm:h-12 rounded-full border border-e3-emerald object-cover"
+                      referrerPolicy="no-referrer"
+                      crossOrigin="anonymous"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full border border-e3-azure bg-e3-azure/20 flex items-center justify-center text-e3-azure font-bold text-[10px]">
+                      {appState.individualMember?.name?.split(' ').map((n: string) => n.charAt(0)).join('')}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </header>
         )}

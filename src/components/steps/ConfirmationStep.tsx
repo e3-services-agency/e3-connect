@@ -335,9 +335,9 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
         {appState.isIndividualBooking ? '4. Confirm Your Booking' : '6. Confirm Your Booking'}
       </h2>
 
-      <div className="max-w-3xl mx-auto space-y-6">
+      <div className="max-w-3xl mx-auto space-y-4 pb-8">
         {/* Session Title */}
-        <div className="bg-e3-space-blue/70 p-4 sm:p-6 rounded-lg border border-e3-white/10">
+        <div className="bg-e3-space-blue/70 p-4 sm:p-5 rounded-lg border border-e3-white/10">
           <label className="block text-sm font-medium text-e3-emerald mb-3">
             Session Title
             <span className="text-e3-white/60 text-xs ml-2">Add a clear name for this meeting to help participants recognize it easily</span>
@@ -352,7 +352,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
         </div>
 
         {/* Topic */}
-        <div className="bg-e3-space-blue/70 p-4 sm:p-6 rounded-lg border border-e3-white/10">
+        <div className="bg-e3-space-blue/70 p-4 sm:p-5 rounded-lg border border-e3-white/10">
           <label className="block text-sm font-medium text-e3-emerald mb-3">
             Topic <span className="text-red-400">*</span>
             <span className="text-e3-white/60 text-xs ml-2">What will you be discussing in this meeting?</span>
@@ -371,9 +371,9 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
         </div>
 
         {/* Meeting Details - WHEN & WHO */}
-        <div className={`grid grid-cols-1 ${appState.isIndividualBooking ? '' : 'lg:grid-cols-2'} gap-6`}>
+        <div className={`grid grid-cols-1 ${appState.isIndividualBooking ? '' : 'lg:grid-cols-2'} gap-4`}>
           {/* WHEN Section */}
-          <div className="bg-e3-space-blue/70 p-4 sm:p-6 rounded-lg border border-e3-white/10">
+          <div className="bg-e3-space-blue/70 p-4 sm:p-5 rounded-lg border border-e3-white/10">
             <div className="flex items-center gap-3 mb-4">
               <Clock className="w-5 h-5 text-e3-emerald" />
               <h3 className="text-lg font-semibold text-e3-emerald">WHEN</h3>
@@ -398,7 +398,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
 
           {/* WHO Section */}
           {!appState.isIndividualBooking && (
-            <div className="bg-e3-space-blue/70 p-4 sm:p-6 rounded-lg border border-e3-white/10">
+            <div className="bg-e3-space-blue/70 p-4 sm:p-5 rounded-lg border border-e3-white/10">
               <div className="flex items-center gap-3 mb-4">
                 <Users className="w-5 h-5 text-e3-emerald" />
                 <h3 className="text-lg font-semibold text-e3-emerald">WHO</h3>
@@ -432,7 +432,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
         </div>
 
         {/* Booker Information */}
-        <div className="bg-e3-space-blue/70 p-4 sm:p-6 rounded-lg border border-e3-white/10">
+        <div className="bg-e3-space-blue/70 p-4 sm:p-5 rounded-lg border border-e3-white/10">
           <div className="flex items-center gap-3 mb-4">
             <Users className="w-5 h-5 text-e3-emerald" />
             <h3 className="text-lg font-semibold text-e3-emerald">BOOKING CONTACT</h3>

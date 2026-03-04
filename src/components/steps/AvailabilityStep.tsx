@@ -526,7 +526,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   const gridCols = (appState.duration || 60) <= 30 ? 'grid-cols-3' : 'grid-cols-2';
 
   return (
-    <div className="flex flex-col h-full gap-4">
+    // Added pb-28 here to ensure content clears the sticky footer
+    <div className="flex flex-col h-full gap-4 pb-28">
       <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-2 flex-none">
         <div className="flex-none flex items-center gap-3 pt-1 min-w-[200px]">
           <Calendar className="w-6 h-6 text-e3-azure" />
@@ -678,25 +679,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             </div>
           </div>
         </div>
-      ) : (
-        <div className="flex items-center gap-3 p-4 bg-e3-space-blue/30 rounded-lg border border-e3-emerald/20 flex-none">
-          {appState.individualMember?.google_photo_url ? (
-            <img 
-              src={appState.individualMember.google_photo_url} 
-              alt={appState.individualMember.name} 
-              className="w-10 h-10 rounded-full border-2 border-e3-emerald/30 object-cover"
-              referrerPolicy="no-referrer"
-            />
-          ) : (
-            <div className="w-10 h-10 rounded-full bg-e3-emerald/20 flex items-center justify-center text-e3-emerald font-bold border-2 border-e3-emerald/30">
-              {appState.individualMember?.name.charAt(0) || '?'}
-            </div>
-          )}
-          <div>
-            <p className="font-bold text-e3-white text-lg">{appState.individualMember?.name}</p>
-            <p className="text-sm text-e3-white/60">Booking a 1-on-1 session</p>
-          </div>
-        </div>
       )}
 
       {error && <div className="text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
@@ -738,7 +720,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                     onClick={() => !isPast && isWorkDay && handleDateSelect(date)}
                     disabled={isPast || !isWorkDay || !isCurrentMonth}
                     className={`
-                      aspect-square rounded-md text-xs font-medium relative flex flex-col items-center justify-center gap-1 transition-all
+                      h-10 sm:h-9 md:h-10 w-full rounded-md text-xs font-medium relative flex flex-col items-center justify-center gap-1 transition-all
                       ${!isCurrentMonth ? 'text-e3-white/10' 
                         : isSelected ? 'bg-e3-emerald text-e3-space-blue font-bold shadow-lg' 
                         : isWorkDay && !isPast && hasAvailability ? 'text-e3-white bg-e3-white/5 hover:bg-e3-white/10' 
@@ -857,21 +839,27 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row justify-between gap-4 mt-2 flex-none pt-4 border-t border-e3-white/10">
-        <button onClick={handleBack} className="order-2 sm:order-1 py-2.5 px-6 text-sm text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40">
-          Back
-        </button>
-        <button 
-          onClick={handleNextWithLogs} 
-          disabled={
-            !appState.selectedDate || 
-            !appState.selectedTime || 
-            (appState.requiredMembers.size > 0 && selectedMembers.required.length === 0)
-          } 
-          className="order-1 sm:order-2 cta py-2.5 px-8 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          Continue
-        </button>
+      {/* Unified Sticky Footer (Mobile & Desktop) */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-md border-t border-e3-white/10 z-50">
+        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row justify-between gap-3 sm:gap-4">
+          <button 
+            onClick={handleBack} 
+            className="order-2 sm:order-1 w-full sm:w-auto py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
+          >
+            Back
+          </button>
+          <button 
+            onClick={handleNextWithLogs} 
+            disabled={
+              !appState.selectedDate || 
+              !appState.selectedTime || 
+              (appState.requiredMembers.size > 0 && selectedMembers.required.length === 0)
+            } 
+            className="order-1 sm:order-2 w-full sm:w-auto cta disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Continue
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -32,12 +32,12 @@ const BookerInfoStep: React.FC<StepProps> = ({ appState, onNext, onBack, onState
   };
 
   return (
-    <div className="step animate-fade-in max-w-md mx-auto pb-28" aria-labelledby="step4-heading">
-      <div className="text-center mb-8">
-        <div className="w-16 h-16 bg-e3-emerald/20 rounded-full flex items-center justify-center mx-auto mb-4">
-          <User className="w-8 h-8 text-e3-emerald" />
+    <div className="step animate-fade-in max-w-md mx-auto pb-36" aria-labelledby="step4-heading">
+      <div className="text-center mb-6">
+        <div className="w-12 h-12 bg-e3-emerald/20 rounded-full flex items-center justify-center mx-auto mb-3">
+          <User className="w-6 h-6 text-e3-emerald" />
         </div>
-        <h2 id="step4-heading" className="text-2xl font-bold text-e3-white mb-2">
+        <h2 id="step4-heading" className="text-xl sm:text-2xl font-bold text-e3-white mb-2">
           Your Information
         </h2>
         <p className="text-e3-white/70">

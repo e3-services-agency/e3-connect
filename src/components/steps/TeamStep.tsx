@@ -240,14 +240,14 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
           const isOptional = appState.optionalMembers.has(member.id);
           
           return (
-            <div key={member.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-4 bg-e3-space-blue/70 rounded-lg border border-e3-white/10">
+            <div key={member.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 bg-e3-space-blue/70 rounded-lg border border-e3-white/10">
               <div className="flex items-center gap-3 flex-1">
                 {/* Profile Photo */}
                 {member.google_photo_url ? (
                   <img 
                     src={member.google_photo_url} 
                     alt={member.name}
-                    className="w-12 h-12 rounded-full border-2 border-e3-azure/30 object-cover"
+                    className="w-10 h-10 rounded-full border-2 border-e3-azure/30 object-cover"
                     onError={(e) => {
                       e.currentTarget.style.display = 'none';
                       const fallback = e.currentTarget.nextElementSibling as HTMLElement;
@@ -257,7 +257,7 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
                     crossOrigin="anonymous"
                   />
                 ) : null}
-                <div className={`w-12 h-12 rounded-full bg-e3-azure/20 flex items-center justify-center text-e3-azure font-bold border-2 border-e3-azure/30 ${member.google_photo_url ? 'hidden' : ''}`}>
+                <div className={`w-10 h-10 rounded-full bg-e3-azure/20 flex items-center justify-center text-e3-azure text-sm font-bold border-2 border-e3-azure/30 ${member.google_photo_url ? 'hidden' : ''}`}>
                   {member.name.split(' ').map(n => n.charAt(0)).join('')}
                 </div>
                 

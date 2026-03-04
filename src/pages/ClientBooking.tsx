@@ -204,10 +204,32 @@ const ClientBooking: React.FC = () => {
                   className="h-12 hover:opacity-90 transition-opacity cursor-pointer"
                 />
               </a>
+              
               <div className="text-center flex-1">
-                <h1 className="text-3xl font-bold text-e3-emerald">Schedule a Meeting</h1>
+                {/* NEW: Display the profile photo if it's an individual booking and they have a photo */}
+                {appState.isIndividualBooking && appState.individualMember?.google_photo_url && (
+                  <img 
+                    src={appState.individualMember.google_photo_url} 
+                    alt={appState.individualMember.name} 
+                    className="w-16 h-16 rounded-full mx-auto mb-3 border-2 border-e3-emerald object-cover shadow-lg"
+                    referrerPolicy="no-referrer"
+                    crossOrigin="anonymous"
+                  />
+                )}
+                
+                {/* If there's no photo, but it's an individual, show their initials as a fallback */}
+                {appState.isIndividualBooking && !appState.individualMember?.google_photo_url && (
+                  <div className="w-16 h-16 rounded-full mx-auto mb-3 border-2 border-e3-azure bg-e3-azure/20 flex items-center justify-center text-e3-azure font-bold text-xl shadow-lg">
+                    {appState.individualMember?.name?.split(' ').map((n: string) => n.charAt(0)).join('')}
+                  </div>
+                )}
+
+                <h1 className="text-3xl font-bold text-e3-emerald">
+                  {appState.isIndividualBooking ? `Meeting with ${appState.individualMember?.name}` : 'Schedule a Meeting'}
+                </h1>
                 <p className="text-e3-white/60 text-sm mt-1">Follow the steps below to book your session.</p>
               </div>
+              
               <div className="w-12"></div> {/* Spacer for balance */}
             </div>
           </header>

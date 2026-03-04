@@ -59,47 +59,40 @@ const ClientBooking: React.FC = () => {
       try {
         console.log('Fetching entity for slug:', clientSlug);
         
-        // 1. Try fetching Client Team first
-        const { data: team, error: teamError } = await supabase
-          .from('client_teams')
-          .select('*')
-          .eq('booking_slug', clientSlug)
-          .eq('is_active', true)
-          .maybeSingle(); 
+        // Use our secure backend function instead of querying tables directly!
+        const { data, error } = await supabase.rpc('resolve_booking_slug', { 
+          lookup_slug: clientSlug 
+        });
 
-        if (team) {
-          console.log('Found team:', team);
-          setClientTeam(team);
+        if (error) throw error;
+
+        // 1. Handle Client Team
+        if (data && data.type === 'team') {
+          console.log('Found team:', data);
+          setClientTeam(data);
           setAppState(prev => ({ 
             ...prev, 
-            clientTeamId: team.id,
-            bookingTitle: `${team.name} x E3`,
+            clientTeamId: data.id,
+            bookingTitle: `${data.name} x E3`,
             isIndividualBooking: false
           }));
           setLoading(false);
           return;
         }
 
-        // 2. Fallback: Try fetching Individual Member
-        const { data: member, error: memberError } = await supabase
-          .from('team_members')
-          .select('*')
-          .eq('booking_slug', clientSlug)
-          .eq('is_active', true)
-          .maybeSingle();
-
-        if (member) {
-          console.log('Found individual member:', member);
-          setClientTeam(member); // We store the member here so the page doesn't show "Client Not Found"
+        // 2. Handle Individual Member
+        if (data && data.type === 'member') {
+          console.log('Found individual member:', data);
+          setClientTeam(data); 
           
           setAppState(prev => ({
             ...prev,
             isIndividualBooking: true,
-            individualMember: member,
-            requiredMembers: new Set([member.id]), // Pre-select them
-            currentStep: 1, // Start directly on Date & Time
-            totalSteps: 4,  // Skip the 'Team' step entirely
-            bookingTitle: `Meeting with ${member.name}`,
+            individualMember: data,
+            requiredMembers: new Set([data.id]), 
+            currentStep: 1, 
+            totalSteps: 4,  
+            bookingTitle: `Meeting with ${data.name}`,
             steps: [
               { name: 'DATE & TIME' },
               { name: 'YOUR INFO' },
@@ -111,15 +104,13 @@ const ClientBooking: React.FC = () => {
           return;
         }
 
-        // Neither found
+        // Neither found (slug is invalid or inactive)
         console.log('No team or individual found for slug:', clientSlug);
         setLoading(false);
 
       } catch (error) {
         console.error('An unexpected error occurred while loading:', error);
         navigate('/');
-      } finally {
-        setLoading(false);
       }
     };
 

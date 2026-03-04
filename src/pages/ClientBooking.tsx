@@ -191,9 +191,9 @@ const ClientBooking: React.FC = () => {
         
         {/* Only show the header if it is NOT embedded */}
         {!isEmbedded && (
-          <header className="mb-4 sm:mb-8 mt-2 sm:mt-0">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-              {/* Logo - Adjusted for mobile center alignment */}
+          <header className="mb-4 sm:mb-6 mt-2">
+            <div className="flex flex-row items-center justify-center gap-3 sm:gap-6">
+              {/* Logo - Significantly smaller on mobile */}
               <div className="flex-none">
                 <a 
                   href={`https://e3-services.com?utm_source=booking&utm_medium=referral&utm_campaign=${clientSlug}`}
@@ -203,39 +203,37 @@ const ClientBooking: React.FC = () => {
                   <img 
                     src={e3Logo} 
                     alt="E3 Logo" 
-                    className="h-8 sm:h-12 hover:opacity-90 transition-opacity cursor-pointer"
+                    className="h-6 sm:h-10 hover:opacity-90 transition-opacity cursor-pointer"
                   />
                 </a>
               </div>
               
-              <div className="text-center flex-1 px-2">
-                {/* Profile Photo - Smaller on mobile */}
-                {appState.isIndividualBooking && appState.individualMember?.google_photo_url && (
-                  <img 
-                    src={appState.individualMember.google_photo_url} 
-                    alt={appState.individualMember.name} 
-                    className="w-12 h-12 sm:w-16 sm:h-16 rounded-full mx-auto mb-2 sm:mb-3 border-2 border-e3-emerald object-cover shadow-lg"
-                    referrerPolicy="no-referrer"
-                    crossOrigin="anonymous"
-                  />
-                )}
-                
-                {/* Initials Fallback - Smaller on mobile */}
-                {appState.isIndividualBooking && !appState.individualMember?.google_photo_url && (
-                  <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full mx-auto mb-2 sm:mb-3 border-2 border-e3-azure bg-e3-azure/20 flex items-center justify-center text-e3-azure font-bold text-lg sm:text-xl shadow-lg">
-                    {appState.individualMember?.name?.split(' ').map((n: string) => n.charAt(0)).join('')}
-                  </div>
-                )}
-
-                {/* Title - Smaller text on mobile (text-xl vs text-3xl) */}
-                <h1 className="text-xl sm:text-3xl font-bold text-e3-emerald leading-tight">
+              <div className="flex-1 min-w-0">
+                {/* Single Row Layout for Logo and Title on Mobile */}
+                <h1 className="text-lg sm:text-2xl font-bold text-e3-emerald leading-tight truncate">
                   {appState.isIndividualBooking ? `Meeting with ${appState.individualMember?.name}` : 'Schedule a Meeting'}
                 </h1>
-                <p className="text-e3-white/60 text-xs sm:text-sm mt-1">Follow the steps below to book your session.</p>
+                <p className="text-e3-white/60 text-[10px] sm:text-xs">Follow the steps below to book your session.</p>
               </div>
-              
-              {/* Desktop-only spacer to keep text centered when logo is on the left */}
-              <div className="hidden sm:block w-12"></div>
+
+              {/* Minimized Profile Photo for Header context */}
+              {appState.isIndividualBooking && (
+                <div className="flex-none">
+                  {appState.individualMember?.google_photo_url ? (
+                    <img 
+                      src={appState.individualMember.google_photo_url} 
+                      alt={appState.individualMember.name} 
+                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full border border-e3-emerald object-cover"
+                      referrerPolicy="no-referrer"
+                      crossOrigin="anonymous"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full border border-e3-azure bg-e3-azure/20 flex items-center justify-center text-e3-azure font-bold text-xs">
+                      {appState.individualMember?.name?.split(' ').map((n: string) => n.charAt(0)).join('')}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </header>
         )}

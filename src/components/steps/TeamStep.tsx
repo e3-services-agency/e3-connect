@@ -216,7 +216,7 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
   }
 
   return (
-    <div className="step animate-fade-in pb-48 relative" aria-labelledby="step1-heading">
+    <div className="step animate-fade-in pb-48" aria-labelledby="step1-heading">
       <h2 id="step1-heading" className="sub-heading mb-6">1. Choose Team Members</h2>
       
       {/* Select All Checkbox */}

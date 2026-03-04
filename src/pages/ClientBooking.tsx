@@ -189,10 +189,9 @@ const ClientBooking: React.FC = () => {
     <div className={isEmbedded ? "bg-transparent w-full p-0 sm:p-2" : "min-h-screen bg-e3-space-blue p-4 sm:p-6"}>
       <div className={isEmbedded ? "w-full mx-auto" : "max-w-4xl mx-auto"}>
         
-        {/* Only show the header if it is NOT embedded */}
         {!isEmbedded && (
           <header className="mb-4 sm:mb-6 mt-2">
-            <div className="flex flex-row items-center justify-center gap-3 sm:gap-6">
+            <div className="flex flex-row items-center justify-between gap-3 sm:gap-6 px-1">
               {/* Logo - Significantly smaller on mobile */}
               <div className="flex-none">
                 <a 
@@ -208,27 +207,27 @@ const ClientBooking: React.FC = () => {
                 </a>
               </div>
               
-              <div className="flex-1 min-w-0">
-                {/* Single Row Layout for Logo and Title on Mobile */}
-                <h1 className="text-lg sm:text-2xl font-bold text-e3-emerald leading-tight truncate">
+              <div className="flex-1 min-w-0 text-left sm:text-center">
+                {/* Title - Compact size to prevent layout breaks */}
+                <h1 className="text-base sm:text-2xl font-bold text-e3-emerald leading-tight truncate">
                   {appState.isIndividualBooking ? `Meeting with ${appState.individualMember?.name}` : 'Schedule a Meeting'}
                 </h1>
-                <p className="text-e3-white/60 text-[10px] sm:text-xs">Follow the steps below to book your session.</p>
+                <p className="text-e3-white/60 text-[10px] sm:text-xs">Follow the steps below to book.</p>
               </div>
 
-              {/* Minimized Profile Photo for Header context */}
+              {/* Profile Photo - Compacted for single-row layout */}
               {appState.isIndividualBooking && (
                 <div className="flex-none">
                   {appState.individualMember?.google_photo_url ? (
                     <img 
                       src={appState.individualMember.google_photo_url} 
                       alt={appState.individualMember.name} 
-                      className="w-8 h-8 sm:w-10 sm:h-10 rounded-full border border-e3-emerald object-cover"
+                      className="w-8 h-8 sm:w-12 sm:h-12 rounded-full border border-e3-emerald object-cover"
                       referrerPolicy="no-referrer"
                       crossOrigin="anonymous"
                     />
                   ) : (
-                    <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full border border-e3-azure bg-e3-azure/20 flex items-center justify-center text-e3-azure font-bold text-xs">
+                    <div className="w-8 h-8 sm:w-12 sm:h-12 rounded-full border border-e3-azure bg-e3-azure/20 flex items-center justify-center text-e3-azure font-bold text-[10px]">
                       {appState.individualMember?.name?.split(' ').map((n: string) => n.charAt(0)).join('')}
                     </div>
                   )}

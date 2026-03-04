@@ -39,7 +39,7 @@ const InviteStep: React.FC<StepProps> = ({ appState, onNext, onBack, onStateChan
   };
 
   return (
-    <div className="step animate-fade-in pb-36 max-w-md mx-auto" aria-labelledby="step5-heading">
+    <div className="step animate-fade-in pb-48 max-w-md mx-auto min-h-[50vh] flex flex-col" aria-labelledby="step5-heading">
       <h2 id="step5-heading" className="text-xl sm:text-2xl font-bold text-e3-white text-center mb-2">Invite Guests (Optional)</h2>
       <p className="text-e3-white/70 text-sm sm:text-base mb-6 text-center">Add email addresses for anyone else you'd like to invite, or click "Next" to proceed without guests.</p>
       

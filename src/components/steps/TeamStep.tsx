@@ -336,12 +336,14 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
       {/* Unified Sticky Footer (Mobile & Desktop) */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-md border-t border-e3-white/10 z-50">
         <div className="max-w-3xl mx-auto flex flex-col sm:flex-row justify-end gap-3 sm:gap-4">
-          <button onClick={confirmTeamSelection} className="w-full sm:w-auto cta focusable">
+          <button 
+            onClick={confirmTeamSelection} 
+            className="w-full sm:w-auto cta"
+          >
             Find Availability
           </button>
         </div>
       </div>
-    </div>
   );
 };
 

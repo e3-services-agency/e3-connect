@@ -76,7 +76,7 @@ const BookerInfoStep: React.FC<StepProps> = ({ appState, onNext, onBack, onState
       
       {/* Unified Sticky Footer (Mobile & Desktop) */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-md border-t border-e3-white/10 z-50">
-        <div className="max-w-md mx-auto flex flex-col sm:flex-row justify-between gap-3 sm:gap-4">
+        <div className="max-w-3xl mx-auto flex flex-col sm:flex-row justify-between gap-3 sm:gap-4">
           <button 
             onClick={onBack} 
             className="order-2 sm:order-1 w-full sm:w-auto py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"

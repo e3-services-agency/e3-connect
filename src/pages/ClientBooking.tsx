@@ -36,8 +36,8 @@ const ClientBooking: React.FC = () => {
     clientTeamId: '',
     steps: [
       { name: 'TEAM' },
-      { name: 'DATE & TIME' },
-      { name: 'YOUR INFO' },
+      { name: 'WHEN' },
+      { name: 'INFO' },
       { name: 'GUESTS' },
       { name: 'CONFIRM' }
     ]
@@ -94,8 +94,8 @@ const ClientBooking: React.FC = () => {
             totalSteps: 4,  
             bookingTitle: `Meeting with ${data.name}`,
             steps: [
-              { name: 'DATE & TIME' },
-              { name: 'YOUR INFO' },
+              { name: 'WHEN' },
+              { name: 'INFO' },
               { name: 'GUESTS' },
               { name: 'CONFIRM' }
             ]

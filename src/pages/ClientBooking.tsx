@@ -191,46 +191,51 @@ const ClientBooking: React.FC = () => {
         
         {/* Only show the header if it is NOT embedded */}
         {!isEmbedded && (
-          <header className="mb-6">
-            <div className="flex items-center justify-between mb-4">
-              <a 
-                href={`https://e3-services.com?utm_source=booking&utm_medium=referral&utm_campaign=${clientSlug}`}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <img 
-                  src={e3Logo} 
-                  alt="E3 Logo" 
-                  className="h-12 hover:opacity-90 transition-opacity cursor-pointer"
-                />
-              </a>
+          <header className="mb-4 sm:mb-8 mt-2 sm:mt-0">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              {/* Logo - Adjusted for mobile center alignment */}
+              <div className="flex-none">
+                <a 
+                  href={`https://e3-services.com?utm_source=booking&utm_medium=referral&utm_campaign=${clientSlug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img 
+                    src={e3Logo} 
+                    alt="E3 Logo" 
+                    className="h-8 sm:h-12 hover:opacity-90 transition-opacity cursor-pointer"
+                  />
+                </a>
+              </div>
               
-              <div className="text-center flex-1">
-                {/* NEW: Display the profile photo if it's an individual booking and they have a photo */}
+              <div className="text-center flex-1 px-2">
+                {/* Profile Photo - Smaller on mobile */}
                 {appState.isIndividualBooking && appState.individualMember?.google_photo_url && (
                   <img 
                     src={appState.individualMember.google_photo_url} 
                     alt={appState.individualMember.name} 
-                    className="w-16 h-16 rounded-full mx-auto mb-3 border-2 border-e3-emerald object-cover shadow-lg"
+                    className="w-12 h-12 sm:w-16 sm:h-16 rounded-full mx-auto mb-2 sm:mb-3 border-2 border-e3-emerald object-cover shadow-lg"
                     referrerPolicy="no-referrer"
                     crossOrigin="anonymous"
                   />
                 )}
                 
-                {/* If there's no photo, but it's an individual, show their initials as a fallback */}
+                {/* Initials Fallback - Smaller on mobile */}
                 {appState.isIndividualBooking && !appState.individualMember?.google_photo_url && (
-                  <div className="w-16 h-16 rounded-full mx-auto mb-3 border-2 border-e3-azure bg-e3-azure/20 flex items-center justify-center text-e3-azure font-bold text-xl shadow-lg">
+                  <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full mx-auto mb-2 sm:mb-3 border-2 border-e3-azure bg-e3-azure/20 flex items-center justify-center text-e3-azure font-bold text-lg sm:text-xl shadow-lg">
                     {appState.individualMember?.name?.split(' ').map((n: string) => n.charAt(0)).join('')}
                   </div>
                 )}
 
-                <h1 className="text-3xl font-bold text-e3-emerald">
+                {/* Title - Smaller text on mobile (text-xl vs text-3xl) */}
+                <h1 className="text-xl sm:text-3xl font-bold text-e3-emerald leading-tight">
                   {appState.isIndividualBooking ? `Meeting with ${appState.individualMember?.name}` : 'Schedule a Meeting'}
                 </h1>
-                <p className="text-e3-white/60 text-sm mt-1">Follow the steps below to book your session.</p>
+                <p className="text-e3-white/60 text-xs sm:text-sm mt-1">Follow the steps below to book your session.</p>
               </div>
               
-              <div className="w-12"></div> {/* Spacer for balance */}
+              {/* Desktop-only spacer to keep text centered when logo is on the left */}
+              <div className="hidden sm:block w-12"></div>
             </div>
           </header>
         )}

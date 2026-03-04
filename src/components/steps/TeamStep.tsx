@@ -240,7 +240,7 @@ const TeamStep: React.FC<TeamStepProps> = ({ appState, onNext, onBack, onStateCh
           const isOptional = appState.optionalMembers.has(member.id);
           
           return (
-            <div key={member.id} className="flex flex-col fsm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 bg-e3-space-blue/70 rounded-lg border border-e3-white/10">
+            <div key={member.id} className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3 sm:p-4 bg-e3-space-blue/70 rounded-lg border border-e3-white/10">
               <div className="flex items-center gap-3 flex-1">
                 {/* Profile Photo */}
                 {member.google_photo_url ? (

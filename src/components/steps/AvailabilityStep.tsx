@@ -579,7 +579,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         )}
       </div>
 
-      {!appState.isIndividualBooking ? (
+      {!appState.isIndividualBooking && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-none">
           <div 
             className={`rounded-lg p-3 border border-e3-azure/20 transition-colors min-h-[80px] ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-e3-emerald/50' : 'bg-e3-space-blue/30'}`}

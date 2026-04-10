@@ -2,8 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Calendar, Clock, ChevronLeft, ChevronRight, X, Trash2, GripHorizontal, Loader, List, LayoutGrid } from 'lucide-react';
 import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
 import FullCalendar from '@fullcalendar/react';
-import type { DatesSetArg, EventClickArg, EventInput } from '@fullcalendar/core';
-import dayGridPlugin from '@fullcalendar/daygrid';
+import type { DatesSetArg, EventClickArg, EventContentArg, EventInput } from '@fullcalendar/core';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -590,31 +589,15 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     const daysInRange = eachDayOfInterval({ start: busyFetchRange.start, end: endInclusive });
     const now = new Date();
 
-    const busyEvents: EventInput[] = [];
-    Object.entries(monthlyBusySchedule).forEach(([email, slots]) => {
-      slots.forEach((busy, i) => {
-        busyEvents.push({
-          id: `busy-${email}-${i}-${busy.start}`,
-          start: busy.start,
-          end: busy.end,
-          display: 'background',
-          classNames: ['fc-slot-busy-bg'],
-          groupId: 'busy',
-        });
-      });
-    });
-
     const slotEvents: EventInput[] = [];
     daysInRange.forEach(day => {
       if (day < now && !isSameDay(day, now)) return;
       const slots = generateSlotsForDate(day);
       slots.forEach((slot, idx) => {
-        const startDt = new Date(slot.start);
-        const endDt = new Date(slot.end);
         const isSelected = appState.selectedTime === slot.start;
         slotEvents.push({
           id: `avail-${slot.start}-${idx}`,
-          title: `${formatTimeSlot(startDt)} – ${formatTimeSlot(endDt)}`,
+          title: '',
           start: slot.start,
           end: slot.end,
           extendedProps: { slot, kind: 'available' as const },
@@ -623,16 +606,14 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
       });
     });
 
-    return [...busyEvents, ...slotEvents];
+    return slotEvents;
   }, [
     schedulingSettings,
     loading,
     busyFetchRange.start,
     busyFetchRange.end,
-    monthlyBusySchedule,
     generateSlotsForDate,
     appState.selectedTime,
-    formatTimeSlot,
   ]);
 
   const handleFcDatesSet = useCallback((info: DatesSetArg) => {
@@ -661,6 +642,36 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
         : { hour: 'numeric', minute: '2-digit', meridiem: 'short' as const },
     };
   }, [appState.timeFormat]);
+
+  const renderFcEventContent = useCallback(
+    (arg: EventContentArg) => {
+      const slot = arg.event.extendedProps?.slot as TimeSlot | undefined;
+      const kind = arg.event.extendedProps?.kind;
+      if (kind !== 'available' || !slot) {
+        return null;
+      }
+      const startDt = new Date(slot.start);
+      const endDt = new Date(slot.end);
+      const timeLabel = `${formatTimeSlot(startDt)} – ${formatTimeSlot(endDt)}`;
+      return (
+        <div className="fc-custom-slot-inner flex min-h-0 flex-col gap-0.5 px-0.5 py-0.5">
+          <div className="text-[10px] font-semibold leading-tight text-white">{timeLabel}</div>
+          <div className="flex flex-wrap gap-0.5">
+            {slot.attendees
+              ?.filter((a): a is SlotAttendee => a.available)
+              .map((attendee) => (
+                <span
+                  key={attendee.email}
+                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: attendee.color?.hex }}
+                />
+              ))}
+          </div>
+        </div>
+      );
+    },
+    [formatTimeSlot]
+  );
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentMonth(direction === 'next' ? 
@@ -1079,7 +1090,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
               </div>
             </div>
             <p className="text-e3-white/50 text-xs mt-2">
-              Click an available slot in the grid. Busy times from connected calendars appear shaded.
+              Click an available slot in the grid to select a time.
             </p>
           </div>
 
@@ -1095,22 +1106,23 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
             >
               <FullCalendar
                 key={`fc-${fcTimezone}-${slotMinutes}-${appState.timeFormat}`}
-                plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+                plugins={[timeGridPlugin, interactionPlugin]}
                 initialView="timeGridWeek"
                 headerToolbar={{
                   left: 'prev,next today',
                   center: 'title',
-                  right: 'timeGridDay,timeGridWeek,dayGridMonth',
+                  right: 'timeGridDay,timeGridWeek',
                 }}
                 events={fullCalendarEvents}
                 datesSet={handleFcDatesSet}
                 eventClick={handleFcEventClick}
+                eventContent={renderFcEventContent}
                 selectable={false}
                 timeZone={fcTimezone}
                 firstDay={1}
                 nowIndicator
-                slotMinTime="06:00:00"
-                slotMaxTime="23:00:00"
+                slotMinTime="09:00:00"
+                slotMaxTime="18:00:00"
                 slotDuration={{ minutes: slotMinutes }}
                 snapDuration={{ minutes: slotMinutes }}
                 slotLabelInterval={slotMinutes >= 60 ? { hours: 1 } : { minutes: 30 }}
@@ -1118,9 +1130,9 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                 eventTimeFormat={fcFormats.eventTimeFormat}
                 allDaySlot={false}
                 height={520}
-                scrollTime="08:00:00"
+                scrollTime="09:00:00"
                 eventOrder="start"
-                displayEventTime
+                displayEventTime={false}
               />
             </div>
           </div>

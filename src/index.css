@@ -170,6 +170,29 @@ All colors MUST be HSL.
   background: hsl(var(--azure) / 0.7);
 }
 
+/* FullCalendar scroller — match .custom-scrollbar */
+.availability-fc .fc-scroller {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--azure) / 0.5) transparent;
+}
+
+.availability-fc .fc-scroller::-webkit-scrollbar {
+  width: 6px;
+}
+
+.availability-fc .fc-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.availability-fc .fc-scroller::-webkit-scrollbar-thumb {
+  background: hsl(var(--azure) / 0.5);
+  border-radius: 3px;
+}
+
+.availability-fc .fc-scroller::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--azure) / 0.7);
+}
+
 /* FullCalendar — AvailabilityStep (dark column + embed light column) */
 .availability-fc .fc {
   --fc-border-color: rgba(255, 255, 255, 0.2);
@@ -203,20 +226,6 @@ All colors MUST be HSL.
 
 .availability-fc .fc .fc-timegrid-slot-minor {
   border-color: rgba(255, 255, 255, 0.06);
-}
-
-/* Busy (background) — distinct, non-clickable */
-.availability-fc .fc-event.fc-slot-busy-bg.fc-bg-event {
-  opacity: 1 !important;
-  background: repeating-linear-gradient(
-    -45deg,
-    rgba(180, 70, 70, 0.28),
-    rgba(180, 70, 70, 0.28) 4px,
-    rgba(90, 35, 35, 0.22) 4px,
-    rgba(90, 35, 35, 0.22) 8px
-  ) !important;
-  border: 1px solid rgba(255, 120, 120, 0.28) !important;
-  pointer-events: none;
 }
 
 /* Available slots — button-like */
@@ -262,7 +271,7 @@ All colors MUST be HSL.
   z-index: 3 !important;
 }
 
-/* Embed: white panel — grid + text + busy/slots tuned for light bg */
+/* Embed: white panel — grid + text + slots tuned for light bg */
 .availability-fc--embed .fc {
   --fc-border-color: rgba(15, 23, 42, 0.12);
   --fc-page-bg-color: #ffffff;
@@ -291,17 +300,6 @@ All colors MUST be HSL.
 
 .availability-fc--embed .fc .fc-timegrid-slot-minor {
   border-color: rgba(15, 23, 42, 0.06);
-}
-
-.availability-fc--embed .fc-event.fc-slot-busy-bg.fc-bg-event {
-  background: repeating-linear-gradient(
-    -45deg,
-    rgba(185, 80, 80, 0.2),
-    rgba(185, 80, 80, 0.2) 4px,
-    rgba(120, 50, 50, 0.14) 4px,
-    rgba(120, 50, 50, 0.14) 8px
-  ) !important;
-  border: 1px solid rgba(200, 100, 100, 0.22) !important;
 }
 
 .availability-fc--embed .fc-timegrid-event.fc-slot-available-event {

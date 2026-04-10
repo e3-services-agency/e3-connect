@@ -228,6 +228,20 @@ All colors MUST be HSL.
   border-color: rgba(255, 255, 255, 0.06);
 }
 
+/* Busy (background) — subtle blocked time, non-clickable */
+.availability-fc .fc-event.fc-slot-busy-bg.fc-bg-event {
+  opacity: 1 !important;
+  background: repeating-linear-gradient(
+    -42deg,
+    rgba(0, 0, 0, 0.22),
+    rgba(0, 0, 0, 0.22) 3px,
+    rgba(255, 255, 255, 0.04) 3px,
+    rgba(255, 255, 255, 0.04) 6px
+  ) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  pointer-events: none;
+}
+
 /* Available slots — button-like */
 .availability-fc .fc-timegrid-event.fc-slot-available-event {
   cursor: pointer;
@@ -300,6 +314,18 @@ All colors MUST be HSL.
 
 .availability-fc--embed .fc .fc-timegrid-slot-minor {
   border-color: rgba(15, 23, 42, 0.06);
+}
+
+.availability-fc--embed .fc-event.fc-slot-busy-bg.fc-bg-event {
+  background: repeating-linear-gradient(
+    -42deg,
+    rgba(15, 23, 42, 0.12),
+    rgba(15, 23, 42, 0.12) 3px,
+    rgba(148, 163, 184, 0.12) 3px,
+    rgba(148, 163, 184, 0.12) 6px
+  ) !important;
+  border: 1px solid rgba(15, 23, 42, 0.08) !important;
+  pointer-events: none;
 }
 
 .availability-fc--embed .fc-timegrid-event.fc-slot-available-event {

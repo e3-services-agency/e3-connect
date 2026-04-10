@@ -432,7 +432,16 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
       currentTime = new Date(currentTime.getTime() + duration * 60000);
     }
     return slots;
-  }, [schedulingSettings, appState.duration, selectedMemberEmails.required, monthlyBusySchedule, getWorkingHoursForDate, selectedMembers]);
+  }, [
+    schedulingSettings,
+    appState.duration,
+    appState.requiredMembers,
+    appState.optionalMembers,
+    selectedMemberEmails.required,
+    monthlyBusySchedule,
+    getWorkingHoursForDate,
+    selectedMembers,
+  ]);
 
   const dailyAvailabilityMap = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -589,6 +598,20 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     const daysInRange = eachDayOfInterval({ start: busyFetchRange.start, end: endInclusive });
     const now = new Date();
 
+    const busyEvents: EventInput[] = [];
+    Object.entries(monthlyBusySchedule).forEach(([email, slots]) => {
+      slots.forEach((busy, i) => {
+        busyEvents.push({
+          id: `busy-${email}-${i}-${busy.start}`,
+          start: busy.start,
+          end: busy.end,
+          display: 'background',
+          classNames: ['fc-slot-busy-bg'],
+          groupId: 'busy',
+        });
+      });
+    });
+
     const slotEvents: EventInput[] = [];
     daysInRange.forEach(day => {
       if (day < now && !isSameDay(day, now)) return;
@@ -606,15 +629,24 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
       });
     });
 
-    return slotEvents;
+    return [...busyEvents, ...slotEvents];
   }, [
     schedulingSettings,
     loading,
     busyFetchRange.start,
     busyFetchRange.end,
+    monthlyBusySchedule,
     generateSlotsForDate,
     appState.selectedTime,
+    appState.requiredMembers,
+    appState.optionalMembers,
   ]);
+
+  const fcTeamCompositionKey = useMemo(() => {
+    const req = [...appState.requiredMembers].sort().join('|');
+    const opt = [...appState.optionalMembers].sort().join('|');
+    return `${req}__${opt}`;
+  }, [appState.requiredMembers, appState.optionalMembers]);
 
   const handleFcDatesSet = useCallback((info: DatesSetArg) => {
     setBusyFetchRange({ start: info.start, end: info.end });
@@ -662,6 +694,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
               .map((attendee) => (
                 <span
                   key={attendee.email}
+                  title={attendee.name}
                   className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
                   style={{ backgroundColor: attendee.color?.hex }}
                 />
@@ -1090,7 +1123,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
               </div>
             </div>
             <p className="text-e3-white/50 text-xs mt-2">
-              Click an available slot in the grid to select a time.
+              Diagonal stripes show busy time from connected calendars. Click a green slot to select it.
             </p>
           </div>
 
@@ -1105,7 +1138,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
               className={`availability-fc overflow-x-auto -mx-1 px-1 pb-1 ${isEmbed ? 'availability-fc--embed' : ''}`}
             >
               <FullCalendar
-                key={`fc-${fcTimezone}-${slotMinutes}-${appState.timeFormat}`}
+                key={`fc-${fcTimezone}-${slotMinutes}-${appState.timeFormat}-${fcTeamCompositionKey}`}
                 plugins={[timeGridPlugin, interactionPlugin]}
                 initialView="timeGridWeek"
                 headerToolbar={{

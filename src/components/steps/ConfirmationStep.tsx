@@ -7,7 +7,20 @@ import { toast } from 'sonner';
 import { Textarea } from '../ui/textarea';
 import { Calendar, Clock, Users, ChevronDown, ChevronUp } from 'lucide-react';
 
-const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange }) => {
+interface ConfirmationStepProps extends StepProps {
+  /** Light single-column layout: topic + confirm only (embed iframe flow) */
+  embedCompact?: boolean;
+  /** Called before state reset when user starts over (embed flow returns to time picker) */
+  onAfterBookingReset?: () => void;
+}
+
+const ConfirmationStep: React.FC<ConfirmationStepProps> = ({
+  appState,
+  onBack,
+  onStateChange,
+  embedCompact,
+  onAfterBookingReset,
+}) => {
   const [isBooked, setIsBooked] = useState(false);
   const [isBooking, setIsBooking] = useState(false);
   const [showDescription, setShowDescription] = useState(false);
@@ -192,6 +205,7 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
   };
 
   const resetFlow = () => {
+    onAfterBookingReset?.();
     onStateChange({
       currentStep: 1,
       duration: null,
@@ -232,6 +246,48 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
   const meetingDuration = appState.duration || 30;
 
   if (isBooked) {
+    if (embedCompact) {
+      return (
+        <div className="step animate-fade-in max-w-md mx-auto text-center" aria-labelledby="success-heading-embed">
+          <div className="w-14 h-14 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Calendar className="w-7 h-7 text-emerald-600" />
+          </div>
+          <h2 id="success-heading-embed" className="text-xl font-bold text-slate-900 mb-2">
+            You are booked
+          </h2>
+          <p className="text-slate-600 text-sm mb-6">Calendar invites are being sent to the attendees.</p>
+          {meetingData?.google_meet_link && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4 mb-6 text-left">
+              <a
+                href={meetingData.google_meet_link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block w-full text-center bg-e3-emerald text-e3-space-blue px-4 py-2 rounded-lg font-medium"
+              >
+                Join Google Meet
+              </a>
+            </div>
+          )}
+          <div className="bg-slate-50 rounded-lg p-4 text-left text-sm text-slate-800 border border-slate-200 mb-6">
+            <div className="grid gap-2">
+              <div>
+                <span className="text-slate-500">When:</span> {dateString} · {timeString}
+              </div>
+              <div>
+                <span className="text-slate-500">Topic:</span> {sessionTopic}
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={resetFlow}
+            className="w-full py-3 rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+          >
+            Book another time
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="step animate-fade-in text-center max-w-2xl mx-auto" aria-labelledby="success-heading">
         <div className="w-16 h-16 bg-e3-emerald/20 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -324,6 +380,70 @@ const ConfirmationStep: React.FC<StepProps> = ({ appState, onBack, onStateChange
         
         <button onClick={resetFlow} className="cta focusable">
           Schedule Another Meeting
+        </button>
+      </div>
+    );
+  }
+
+  if (embedCompact && !isBooked) {
+    return (
+      <div className="animate-fade-in space-y-5 pb-2 max-w-md mx-auto" aria-labelledby="embed-confirm-heading">
+        <h3 id="embed-confirm-heading" className="text-lg font-bold text-slate-900">
+          Confirm your booking
+        </h3>
+        <p className="text-sm text-slate-600">Add a title and topic for the calendar event.</p>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">Session title</label>
+          <input
+            type="text"
+            value={sessionTitle}
+            onChange={(e) => {
+              setSessionTitle(e.target.value);
+              onStateChange({ bookingTitle: e.target.value });
+            }}
+            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-slate-900 placeholder-slate-400 focus:border-e3-azure focus:ring-2 focus:ring-e3-azure/30 outline-none text-sm"
+            placeholder="Short name for the meeting"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">
+            Topic <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={sessionTopic}
+            onChange={(e) => {
+              setSessionTopic(e.target.value);
+              onStateChange({ bookingTopic: e.target.value });
+            }}
+            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2.5 text-slate-900 placeholder-slate-400 focus:border-e3-azure focus:ring-2 focus:ring-e3-azure/30 outline-none text-sm"
+            placeholder="What will you discuss?"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-2">Description (optional)</label>
+          <Textarea
+            value={sessionDescription}
+            onChange={(e) => {
+              setSessionDescription(e.target.value);
+              onStateChange({ bookingDescription: e.target.value });
+            }}
+            placeholder="Agenda, links, context…"
+            className="min-h-[88px] bg-white border-slate-200 text-slate-900 placeholder-slate-400"
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={confirmBooking}
+          disabled={isBooking || !sessionTopic.trim()}
+          className="w-full cta py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+        >
+          {isBooking ? 'Booking…' : 'Confirm booking'}
         </button>
       </div>
     );

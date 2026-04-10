@@ -39,6 +39,8 @@ export interface StepProps {
   onNext: () => void;
   onBack: () => void;
   onStateChange: (newState: Partial<AppState>) => void;
+  /** Embedded iframe flow (Koalendar-style); hides wizard chrome in steps that support it */
+  isEmbed?: boolean;
 }
 
 // Adding missing interfaces used in AvailabilityStep

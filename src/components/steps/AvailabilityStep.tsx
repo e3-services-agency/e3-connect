@@ -13,9 +13,13 @@ import { StepProps, TimeSlot } from '../../types/scheduling';
 import type { ClientTeam, TeamMemberConfig } from '../../types/team';
 import { TimezoneSelector } from '../TimezoneSelector';
 import { useBusinessHours } from '../../hooks/useBusinessHours';
+import EmbedHostPanel, { type EmbedHostEntity } from '../embed/EmbedHostPanel';
 
 interface AvailabilityStepProps extends StepProps {
   clientTeamFilter?: string;
+  /** Embedded iframe: split layout + no wizard footer */
+  isEmbed?: boolean;
+  embedHost?: EmbedHostEntity | null;
 }
 
 interface BusySlot {
@@ -59,7 +63,15 @@ const monthCalendarSpan = (month: Date) => {
   return { start, end };
 };
 
-const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, onBack, onStateChange, clientTeamFilter }) => {
+const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
+  appState,
+  onNext,
+  onBack,
+  onStateChange,
+  clientTeamFilter,
+  isEmbed,
+  embedHost,
+}) => {
   
   const activeFilter = useMemo(() => {
     if (clientTeamFilter) return clientTeamFilter;
@@ -499,10 +511,10 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     onStateChange({ requiredMembers: newRequired, optionalMembers: newOptional });
   };
 
-  const handleDateSelect = (date: Date) => {
+  const handleDateSelect = useCallback((date: Date) => {
     setSelectedDate(date);
     onStateChange({ selectedDate: format(date, 'yyyy-MM-dd') });
-  };
+  }, [onStateChange]);
 
   const formatTimeSlot = useCallback((time: Date) => {
     const userTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -522,6 +534,52 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       selectedDate: format(d, 'yyyy-MM-dd')
     });
   }, [onStateChange]);
+
+  const firstAvailableCalendarDate = useMemo(() => {
+    if (!schedulingSettings || selectedMemberEmails.required.length === 0) return null;
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    for (const date of calendarDays) {
+      if (date < todayStart && !isSameDay(date, now)) continue;
+      const key = format(date, 'yyyy-MM-dd');
+      if (dailyAvailabilityMap.has(key)) return date;
+    }
+    return null;
+  }, [calendarDays, dailyAvailabilityMap, schedulingSettings, selectedMemberEmails.required]);
+
+  const embedAutoDatePicked = useRef(false);
+  const embedAutoTimePicked = useRef(false);
+
+  useEffect(() => {
+    if (!isEmbed || embedAutoDatePicked.current || selectedDate || !firstAvailableCalendarDate) return;
+    if (loading || membersLoading) return;
+    handleDateSelect(firstAvailableCalendarDate);
+    embedAutoDatePicked.current = true;
+  }, [
+    isEmbed,
+    firstAvailableCalendarDate,
+    selectedDate,
+    loading,
+    membersLoading,
+    handleDateSelect,
+  ]);
+
+  useEffect(() => {
+    if (!isEmbed || embedAutoTimePicked.current || appState.selectedTime) return;
+    if (loading || !schedulingSettings) return;
+    if (!selectedDate || availableSlots.length === 0) return;
+    handleTimeSelect(availableSlots[0]);
+    embedAutoTimePicked.current = true;
+  }, [
+    isEmbed,
+    loading,
+    schedulingSettings,
+    selectedDate,
+    availableSlots,
+    appState.selectedTime,
+    handleTimeSelect,
+  ]);
 
   const memberEmailToHex = useMemo(() => {
     const map = new Map<string, string>();
@@ -636,17 +694,38 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   const gridCols = (appState.duration || 60) <= 30 ? 'grid-cols-3' : 'grid-cols-2';
 
-  return (
-    // Added pb-28 here to ensure content clears the sticky footer
-    <div className="flex flex-col h-full gap-4 pb-28">
+  const tx = {
+    h2: isEmbed ? 'text-slate-900' : 'text-e3-white',
+    h3: isEmbed ? 'text-slate-900' : 'text-e3-white',
+    muted: isEmbed ? 'text-slate-500' : 'text-e3-white/60',
+    subtle: isEmbed ? 'text-slate-400' : 'text-e3-white/40',
+    icon: isEmbed ? 'text-e3-azure' : 'text-e3-azure',
+    panel: isEmbed
+      ? 'rounded-lg border border-slate-200 bg-slate-50'
+      : 'bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10',
+    slotPanel: isEmbed
+      ? 'rounded-lg border border-slate-200 bg-white p-4 flex flex-col h-full'
+      : 'bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full',
+    tabsList: isEmbed
+      ? 'grid w-full grid-cols-2 lg:inline-flex h-9 bg-slate-100 border border-slate-200 p-1'
+      : 'grid w-full grid-cols-2 lg:inline-flex h-9 bg-e3-space-blue/50 border border-e3-white/10 p-1',
+    poolWrap: isEmbed ? 'bg-slate-100 border-slate-200' : 'bg-e3-space-blue/30 border-e3-white/10',
+    memberBox: (base: 'required' | 'optional') =>
+      isEmbed
+        ? `rounded-lg p-3 border min-h-[80px] border-slate-200 ${base === 'required' ? 'bg-slate-50' : 'bg-slate-50'}`
+        : `rounded-lg p-3 border border-e3-azure/20 transition-colors min-h-[80px] ${base === 'required' ? 'bg-e3-space-blue/30' : 'bg-e3-space-blue/30'}`,
+  };
+
+  const scheduleColumn = (
+    <>
       <div className="flex flex-col gap-3 mb-2 flex-none">
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
           <div className="flex-none flex items-center gap-3 pt-1 min-w-[200px]">
-            <Calendar className="w-6 h-6 text-e3-azure" />
+            <Calendar className={`w-6 h-6 ${tx.icon}`} />
             <div>
-              <h2 className="text-xl font-bold text-e3-white">Select Date & Time</h2>
+              <h2 className={`text-xl font-bold ${tx.h2}`}>Select Date & Time</h2>
               {!appState.isIndividualBooking && (
-                <p className="text-e3-white/60 text-sm">Drag members to change status</p>
+                <p className={`${tx.muted} text-sm`}>Drag members to change status</p>
               )}
             </div>
           </div>
@@ -656,7 +735,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             onValueChange={(v) => setAvailabilityView(v as 'list' | 'calendar')}
             className="w-full lg:w-auto lg:shrink-0"
           >
-            <TabsList className="grid w-full grid-cols-2 lg:inline-flex h-9 bg-e3-space-blue/50 border border-e3-white/10 p-1">
+            <TabsList className={tx.tabsList}>
               <TabsTrigger
                 value="list"
                 className="gap-1.5 px-3 text-xs data-[state=active]:bg-e3-emerald data-[state=active]:text-e3-space-blue"
@@ -820,25 +899,25 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       <div className="flex-grow min-h-0">
         {availabilityView === 'list' ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
-          <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
+          <div className={`${tx.panel} p-4 flex flex-col h-full`}>
             <div className="flex items-center justify-between mb-4 flex-none">
-              <h3 className="font-semibold text-e3-white text-sm">{format(currentMonth, 'MMMM yyyy')}</h3>
+              <h3 className={`font-semibold text-sm ${tx.h3}`}>{format(currentMonth, 'MMMM yyyy')}</h3>
               <div className="flex gap-2">
-                <button onClick={() => navigateMonth('prev')} className="p-1.5 hover:bg-e3-white/10 rounded-lg transition"><ChevronLeft className="w-4 h-4 text-e3-white" /></button>
-                <button onClick={() => navigateMonth('next')} className="p-1.5 hover:bg-e3-white/10 rounded-lg transition"><ChevronRight className="w-4 h-4 text-e3-white" /></button>
+                <button type="button" onClick={() => navigateMonth('prev')} className={`p-1.5 rounded-lg transition ${isEmbed ? 'hover:bg-slate-200' : 'hover:bg-e3-white/10'}`}><ChevronLeft className={`w-4 h-4 ${isEmbed ? 'text-slate-700' : 'text-e3-white'}`} /></button>
+                <button type="button" onClick={() => navigateMonth('next')} className={`p-1.5 rounded-lg transition ${isEmbed ? 'hover:bg-slate-200' : 'hover:bg-e3-white/10'}`}><ChevronRight className={`w-4 h-4 ${isEmbed ? 'text-slate-700' : 'text-e3-white'}`} /></button>
               </div>
             </div>
 
             {loading && (
               <div className="text-center py-2">
                 <div className="w-5 h-5 border-2 border-e3-azure/30 border-t-e3-azure rounded-full animate-spin mx-auto mb-1" />
-                <p className="text-e3-white/60 text-xs">Checking calendars...</p>
+                <p className={`${tx.muted} text-xs`}>Checking calendars...</p>
               </div>
             )}
 
             <div className="grid grid-cols-7 gap-1 flex-grow content-start">
               {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(day => (
-                <div key={day} className="text-center text-xs font-medium text-e3-white/40 py-2">{day}</div>
+                <div key={day} className={`text-center text-xs font-medium py-2 ${isEmbed ? 'text-slate-400' : 'text-e3-white/40'}`}>{day}</div>
               ))}
               {calendarDays.map((date, index) => {
                 const isCurrentMonth = date.getMonth() === currentMonth.getMonth();
@@ -856,10 +935,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                     disabled={isPast || !isWorkDay || !isCurrentMonth}
                     className={`
                       h-10 sm:h-9 md:h-10 w-full rounded-md text-xs font-medium relative flex flex-col items-center justify-center gap-1 transition-all
-                      ${!isCurrentMonth ? 'text-e3-white/10' 
+                      ${!isCurrentMonth ? (isEmbed ? 'text-slate-300' : 'text-e3-white/10')
                         : isSelected ? 'bg-e3-emerald text-e3-space-blue font-bold shadow-lg' 
-                        : isWorkDay && !isPast && hasAvailability ? 'text-e3-white bg-e3-white/5 hover:bg-e3-white/10' 
-                        : 'text-e3-white/20 cursor-not-allowed'}
+                        : isWorkDay && !isPast && hasAvailability
+                          ? (isEmbed ? 'text-slate-800 bg-slate-100 hover:bg-slate-200' : 'text-e3-white bg-e3-white/5 hover:bg-e3-white/10')
+                        : (isEmbed ? 'text-slate-300 cursor-not-allowed' : 'text-e3-white/20 cursor-not-allowed')}
                     `}
                   >
                     <span>{format(date, 'd')}</span>
@@ -883,21 +963,22 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
             </div>
           </div>
 
-          <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
-            <div className="flex flex-col gap-3 mb-4 flex-none border-b border-e3-white/5 pb-3">
+          <div className={`${tx.slotPanel}`}>
+            <div className={`flex flex-col gap-3 mb-4 flex-none border-b pb-3 ${isEmbed ? 'border-slate-200' : 'border-e3-white/5'}`}>
               <div className="flex items-center justify-between">
-                 <h3 className="text-e3-white font-semibold text-sm">Duration</h3>
-                 <div className="flex items-center gap-1 bg-e3-space-blue border border-e3-white/10 rounded-md p-0.5">
-                   <button onClick={() => onStateChange({ timeFormat: '12h' })} className={`px-2 py-0.5 text-[10px] rounded ${appState.timeFormat === '12h' ? 'bg-e3-azure text-white' : 'text-e3-white/50'}`}>12h</button>
-                   <button onClick={() => onStateChange({ timeFormat: '24h' })} className={`px-2 py-0.5 text-[10px] rounded ${appState.timeFormat === '24h' ? 'bg-e3-azure text-white' : 'text-e3-white/50'}`}>24h</button>
+                 <h3 className={`${tx.h3} font-semibold text-sm`}>Duration</h3>
+                 <div className={`flex items-center gap-1 rounded-md border p-0.5 ${isEmbed ? 'border-slate-200 bg-slate-100' : 'bg-e3-space-blue border-e3-white/10'}`}>
+                   <button type="button" onClick={() => onStateChange({ timeFormat: '12h' })} className={`px-2 py-0.5 text-[10px] rounded ${appState.timeFormat === '12h' ? 'bg-e3-azure text-white' : isEmbed ? 'text-slate-500' : 'text-e3-white/50'}`}>12h</button>
+                   <button type="button" onClick={() => onStateChange({ timeFormat: '24h' })} className={`px-2 py-0.5 text-[10px] rounded ${appState.timeFormat === '24h' ? 'bg-e3-azure text-white' : isEmbed ? 'text-slate-500' : 'text-e3-white/50'}`}>24h</button>
                  </div>
               </div>
               <div className="flex gap-2">
                 {[15, 30, 45, 60, 90].map(dur => (
                   <button 
+                    type="button"
                     key={dur} 
                     onClick={() => onStateChange({ duration: dur })}
-                    className={`flex-1 py-1.5 text-xs rounded border transition-colors ${appState.duration === dur ? 'bg-e3-emerald text-e3-space-blue border-e3-emerald font-medium' : 'border-e3-white/10 text-e3-white/70 hover:border-e3-white/30'}`}
+                    className={`flex-1 py-1.5 text-xs rounded border transition-colors ${appState.duration === dur ? 'bg-e3-emerald text-e3-space-blue border-e3-emerald font-medium' : isEmbed ? 'border-slate-200 text-slate-700 hover:border-slate-300' : 'border-e3-white/10 text-e3-white/70 hover:border-e3-white/30'}`}
                   >
                     {dur}m
                   </button>
@@ -905,11 +986,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
               </div>
             </div>
 
-            <h3 className="text-e3-white font-semibold text-sm mb-2 flex-none">Available Times</h3>
+            <h3 className={`${tx.h3} font-semibold text-sm mb-2 flex-none`}>Available times</h3>
 
             <div className="flex-grow relative overflow-hidden min-h-[200px]">
                {!selectedDate ? (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center text-e3-white/30">
+                  <div className={`absolute inset-0 flex flex-col items-center justify-center ${isEmbed ? 'text-slate-400' : 'text-e3-white/30'}`}>
                     <Calendar className="w-8 h-8 mb-2 opacity-20" />
                     <p className="text-xs">Select a date on the left</p>
                   </div>
@@ -1047,27 +1128,55 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
         )}
       </div>
 
-      {/* Unified Sticky Footer (Mobile & Desktop) */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-md border-t border-e3-white/10 z-50">
-        <div className="max-w-3xl mx-auto flex flex-col sm:flex-row justify-between gap-3 sm:gap-4">
-          <button 
-            onClick={handleBack} 
-            className="order-2 sm:order-1 w-full sm:w-auto py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
-          >
-            Back
-          </button>
-          <button 
-            onClick={handleNextWithLogs} 
-            disabled={
-              !appState.selectedDate || 
-              !appState.selectedTime || 
-              (appState.requiredMembers.size > 0 && selectedMembers.required.length === 0)
-            } 
-            className="order-1 sm:order-2 w-full sm:w-auto cta disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Continue
-          </button>
+      {!isEmbed && (
+        <div className="fixed bottom-0 left-0 right-0 p-4 bg-e3-space-blue/95 backdrop-blur-md border-t border-e3-white/10 z-50">
+          <div className="max-w-3xl mx-auto flex flex-col sm:flex-row justify-between gap-3 sm:gap-4">
+            <button
+              type="button"
+              onClick={handleBack}
+              className="order-2 sm:order-1 w-full sm:w-auto py-3 px-6 text-e3-white/80 hover:text-e3-white transition rounded-lg border border-e3-white/20 hover:border-e3-white/40"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              onClick={handleNextWithLogs}
+              disabled={
+                !appState.selectedDate ||
+                !appState.selectedTime ||
+                (appState.requiredMembers.size > 0 && selectedMembers.required.length === 0)
+              }
+              className="order-1 sm:order-2 w-full sm:w-auto cta disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Continue
+            </button>
+          </div>
         </div>
+      )}
+    </>
+  );
+
+  return (
+    <div
+      className={
+        isEmbed
+          ? 'flex h-full min-h-[480px] flex-col gap-0 pb-4 lg:grid lg:grid-cols-2 lg:rounded-xl lg:border lg:border-slate-200 lg:shadow-sm'
+          : 'flex h-full flex-col gap-4 pb-28'
+      }
+    >
+      {isEmbed && (
+        <div className="flex flex-col border-b border-white/10 bg-e3-space-blue p-5 lg:min-h-0 lg:border-b-0 lg:border-r lg:border-white/10">
+          <EmbedHostPanel host={embedHost ?? undefined} appState={appState} variant="schedule" />
+        </div>
+      )}
+      <div
+        className={
+          isEmbed
+            ? 'flex min-h-0 flex-1 flex-col bg-white p-4 text-slate-900 lg:p-6'
+            : 'flex min-h-0 flex-1 flex-col'
+        }
+      >
+        {scheduleColumn}
       </div>
     </div>
   );

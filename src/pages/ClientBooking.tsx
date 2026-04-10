@@ -7,18 +7,22 @@ import AvailabilityStep from '../components/steps/AvailabilityStep';
 import BookerInfoStep from '../components/steps/BookerInfoStep';
 import InviteStep from '../components/steps/InviteStep';
 import ConfirmationStep from '../components/steps/ConfirmationStep';
+import EmbedHostPanel, { type EmbedHostEntity } from '../components/embed/EmbedHostPanel';
 import { supabase } from '../integrations/supabase/client';
 import e3Logo from '../assets/e3-logo.png';
 
 const ClientBooking: React.FC = () => {
   const { clientSlug } = useParams<{ clientSlug: string }>();
   const navigate = useNavigate();
-  const [clientTeam, setClientTeam] = useState<any>(null);
+  const [clientTeam, setClientTeam] = useState<EmbedHostEntity | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Check if we are rendering inside a website iframe
   const searchParams = new URLSearchParams(window.location.search);
   const isEmbedded = searchParams.get('embed') === 'true';
+
+  const [embedPhase, setEmbedPhase] = useState<'team' | 'schedule' | 'details' | null>(null);
+  const [embedAvailKey, setEmbedAvailKey] = useState(0);
 
   const initialState: AppState = {
     currentStep: 1,
@@ -117,9 +121,24 @@ const ClientBooking: React.FC = () => {
     loadClientTeam();
   }, [clientSlug, navigate]);
 
+  useEffect(() => {
+    if (!isEmbedded || !clientTeam) return;
+    setEmbedPhase(appState.isIndividualBooking ? 'schedule' : 'team');
+  }, [isEmbedded, clientTeam, appState.isIndividualBooking]);
+
+  useEffect(() => {
+    if (!isEmbedded || embedPhase !== 'schedule') return;
+    if (appState.selectedTime) {
+      setEmbedPhase('details');
+    }
+  }, [isEmbedded, embedPhase, appState.selectedTime]);
+
   const goNext = () => {
+    if (isEmbedded && !appState.isIndividualBooking && appState.currentStep === 1) {
+      setEmbedPhase('schedule');
+    }
     if (appState.currentStep < appState.totalSteps) {
-      setAppState(prev => ({ ...prev, currentStep: prev.currentStep + 1 }));
+      setAppState((prev) => ({ ...prev, currentStep: prev.currentStep + 1 }));
     }
   };
 
@@ -139,7 +158,7 @@ const ClientBooking: React.FC = () => {
       appState,
       onNext: goNext,
       onBack: goBack,
-      onStateChange: handleStateChange
+      onStateChange: handleStateChange,
     };
 
     if (appState.isIndividualBooking) {
@@ -182,6 +201,87 @@ const ClientBooking: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  const stepProps = {
+    appState,
+    onNext: goNext,
+    onBack: goBack,
+    onStateChange: handleStateChange,
+  };
+
+  if (isEmbedded) {
+    if (embedPhase === null) {
+      return (
+        <div className="flex w-full items-center justify-center py-12 text-slate-500">
+          <div className="flex items-center gap-2">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600" />
+            <span>Loading booking…</span>
+          </div>
+        </div>
+      );
+    }
+
+    if (embedPhase === 'team') {
+      return (
+        <div className="bg-transparent w-full p-0 sm:p-2">
+          <div className="mx-auto w-full max-w-lg overflow-hidden rounded-xl border border-slate-200 bg-e3-space-blue p-5 shadow-sm sm:p-6">
+            <TeamStep {...stepProps} clientTeamFilter={clientTeam?.id} isEmbed />
+          </div>
+        </div>
+      );
+    }
+
+    if (embedPhase === 'schedule') {
+      return (
+        <div className="bg-transparent w-full p-0 sm:p-2">
+          <AvailabilityStep
+            key={embedAvailKey}
+            {...stepProps}
+            clientTeamFilter={clientTeam?.id}
+            isEmbed
+            embedHost={clientTeam}
+          />
+        </div>
+      );
+    }
+
+    if (embedPhase === 'details') {
+      return (
+        <div className="w-full p-0 sm:p-2">
+          <div className="mx-auto flex min-h-[520px] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm lg:grid lg:grid-cols-2">
+            <div className="border-b border-white/10 bg-e3-space-blue p-5 lg:border-b-0 lg:border-r lg:border-white/10 lg:p-6">
+              <EmbedHostPanel
+                host={clientTeam}
+                appState={appState}
+                variant="details"
+                onChangeTime={() => {
+                  handleStateChange({ selectedTime: null, selectedDate: null });
+                  setEmbedPhase('schedule');
+                  setEmbedAvailKey((k) => k + 1);
+                }}
+              />
+            </div>
+            <div className="flex max-h-[min(90vh,900px)] flex-col gap-6 overflow-y-auto p-5 lg:p-6">
+              <BookerInfoStep {...stepProps} isEmbed />
+              <div className="border-t border-slate-100 pt-2">
+                <InviteStep {...stepProps} isEmbed />
+              </div>
+              <div className="border-t border-slate-100 pt-2">
+                <ConfirmationStep
+                  {...stepProps}
+                  embedCompact
+                  onAfterBookingReset={() => {
+                    setEmbedPhase('schedule');
+                    setEmbedAvailKey((k) => k + 1);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
   }
 
   return (
@@ -237,9 +337,11 @@ const ClientBooking: React.FC = () => {
           </header>
         )}
         
-        <div className="mb-4">
-          <ProgressBar appState={appState} />
-        </div>
+        {!isEmbedded && (
+          <div className="mb-4">
+            <ProgressBar appState={appState} />
+          </div>
+        )}
         
         <main className={isEmbedded ? "px-0" : "px-2 sm:px-0"}>
           {renderStep()}

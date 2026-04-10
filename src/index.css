@@ -169,3 +169,33 @@ All colors MUST be HSL.
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--azure) / 0.7);
 }
+
+/* FullCalendar — AvailabilityStep (dark / E3) */
+.availability-fc .fc {
+  --fc-border-color: rgba(255, 255, 255, 0.1);
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: rgba(255, 255, 255, 0.04);
+  --fc-list-event-hover-bg-color: rgba(255, 255, 255, 0.06);
+  --fc-today-bg-color: rgba(13, 204, 150, 0.08);
+  --fc-now-indicator-color: #0dcc96;
+  --fc-button-bg-color: rgba(255, 255, 255, 0.06);
+  --fc-button-border-color: rgba(255, 255, 255, 0.15);
+  --fc-button-text-color: hsl(var(--foreground));
+  --fc-button-hover-bg-color: rgba(255, 255, 255, 0.1);
+  --fc-button-active-bg-color: rgba(13, 204, 150, 0.25);
+}
+
+.availability-fc .fc .fc-col-header-cell,
+.availability-fc .fc .fc-timegrid-axis,
+.availability-fc .fc .fc-timegrid-slot-label {
+  color: hsl(var(--foreground) / 0.85);
+}
+
+.availability-fc .fc .fc-slot-available-event {
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.availability-fc .fc .fc-slot-selected-event {
+  box-shadow: 0 0 0 2px #0dcc96;
+}

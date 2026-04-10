@@ -1,9 +1,16 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Calendar, Clock, ChevronLeft, ChevronRight, X, Trash2, GripHorizontal, Loader } from 'lucide-react';
+import { Calendar, Clock, ChevronLeft, ChevronRight, X, Trash2, GripHorizontal, Loader, List, LayoutGrid } from 'lucide-react';
 import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
+import FullCalendar from '@fullcalendar/react';
+import type { DatesSetArg, EventClickArg, EventInput } from '@fullcalendar/core';
+import dayGridPlugin from '@fullcalendar/daygrid';
+import timeGridPlugin from '@fullcalendar/timegrid';
+import interactionPlugin from '@fullcalendar/interaction';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTeamData } from '../../hooks/useTeamData';
 import { supabase } from '../../integrations/supabase/client';
 import { StepProps, TimeSlot } from '../../types/scheduling';
+import type { ClientTeam, TeamMemberConfig } from '../../types/team';
 import { TimezoneSelector } from '../TimezoneSelector';
 import { useBusinessHours } from '../../hooks/useBusinessHours';
 
@@ -15,6 +22,8 @@ interface BusySlot {
   start: string;
   end: string;
 }
+
+type SlotAttendee = NonNullable<TimeSlot['attendees']>[number] & { color?: { hex?: string } };
 
 interface SchedulingWindowSettings {
   min_notice_hours: number;
@@ -44,6 +53,12 @@ const MEMBER_COLORS: MemberColor[] = [
   { border: 'border-fuchsia-500/40', bg: 'bg-fuchsia-500/20', text: 'text-fuchsia-400', hex: '#e879f9' },
 ];
 
+const monthCalendarSpan = (month: Date) => {
+  const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
+  const end = endOfWeek(endOfMonth(month), { weekStartsOn: 1 });
+  return { start, end };
+};
+
 const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, onBack, onStateChange, clientTeamFilter }) => {
   
   const activeFilter = useMemo(() => {
@@ -64,7 +79,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(activeFilter);
     if (isUUID) return activeFilter;
     if (teamMembers.length > 0) {
-       const team = teamMembers[0].clientTeams?.find((t: any) => 
+       const team = teamMembers[0].clientTeams?.find((t: ClientTeam) => 
          t.booking_slug === activeFilter || 
          t.name.toLowerCase().replace(/ /g, '-') === activeFilter
        );
@@ -81,6 +96,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [availabilityView, setAvailabilityView] = useState<'list' | 'calendar'>('list');
+  const [busyFetchRange, setBusyFetchRange] = useState(() => monthCalendarSpan(new Date()));
   const [monthlyBusySchedule, setMonthlyBusySchedule] = useState<Record<string, BusySlot[]>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +180,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
   }, [appState.requiredMembers, appState.optionalMembers, connectedMembers]);
 
+  useEffect(() => {
+    if (availabilityView !== 'list') return;
+    setBusyFetchRange(monthCalendarSpan(currentMonth));
+  }, [currentMonth, availabilityView]);
+
   const selectedMembers = useMemo(() => {
     const requiredMembers = Array.from(appState.requiredMembers)
       .map(memberId => connectedMembers.find(m => m.id === memberId))
@@ -182,7 +204,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
        return MEMBER_COLORS[Math.max(0, index) % MEMBER_COLORS.length];
     };
 
-    const enhanceMember = (m: any) => ({ ...m, color: assignColor(m.id) });
+    const enhanceMember = (m: TeamMemberConfig) => ({ ...m, color: assignColor(m.id) });
 
     return { 
       required: requiredMembers.map(enhanceMember), 
@@ -262,6 +284,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     loadSchedulingSettings();
   }, [appState.isIndividualBooking, appState.individualMember?.id, resolvedTeamId]);
 
+  const busyRangeStartMs = busyFetchRange.start.getTime();
+  const busyRangeEndMs = busyFetchRange.end.getTime();
+  const availabilityEmailsKey =
+    selectedMemberEmails.all.length > 0 ? [...selectedMemberEmails.all].sort().join(',') : 'empty';
+
   useEffect(() => {
     const loadMonthlyAvailability = async () => {
       if (selectedMemberEmails.all.length === 0) {
@@ -274,8 +301,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       setError(null);
       
       try {
-        const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
-        const end = endOfWeek(endOfMonth(currentMonth), { weekStartsOn: 1 });
+        const start = busyFetchRange.start;
+        const end = busyFetchRange.end;
         
         const { data, error } = await supabase.functions.invoke('google-auth', {
           body: {
@@ -289,8 +316,9 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
 
         const memberBusySchedules: Record<string, BusySlot[]> = {};
         if (data?.availability?.calendars) {
-          Object.entries(data.availability.calendars).forEach(([email, calendar]: [string, any]) => {
-            memberBusySchedules[email] = Array.isArray(calendar.busy) ? calendar.busy : [];
+          Object.entries(data.availability.calendars).forEach(([email, calendar]) => {
+            const cal = calendar as { busy?: BusySlot[] };
+            memberBusySchedules[email] = Array.isArray(cal.busy) ? cal.busy : [];
           });
         }
         setMonthlyBusySchedule(memberBusySchedules);
@@ -301,7 +329,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       }
     };
     loadMonthlyAvailability();
-  }, [currentMonth, selectedMemberEmails.all.length > 0 ? selectedMemberEmails.all.join(',') : 'empty']);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- busyRange* + availabilityEmailsKey mirror range & member list
+  }, [busyRangeStartMs, busyRangeEndMs, availabilityEmailsKey]);
 
   const generateSlotsForDate = useCallback((date: Date): TimeSlot[] => {
     if (!schedulingSettings) return [];
@@ -418,13 +447,14 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   }, [calendarDays, generateSlotsForDate, selectedMemberEmails.required, schedulingSettings]);
 
   useEffect(() => {
-    if (!selectedDate || Object.keys(monthlyBusySchedule).length === 0) {
+    if (!selectedDate || !schedulingSettings) {
       setAvailableSlots([]);
       return;
     }
+    if (loading) return;
     const slots = generateSlotsForDate(selectedDate);
     setAvailableSlots(slots);
-  }, [selectedDate, generateSlotsForDate]);
+  }, [selectedDate, generateSlotsForDate, schedulingSettings, loading, monthlyBusySchedule]);
 
   const handleDragStart = (e: React.DragEvent, memberId: string, from: 'required' | 'optional' | 'pool') => {
     setDraggedMember({ id: memberId, from });
@@ -474,14 +504,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
     onStateChange({ selectedDate: format(date, 'yyyy-MM-dd') });
   };
 
-  const handleTimeSelect = (slot: TimeSlot) => {
-    onStateChange({ 
-      selectedTime: slot.start, 
-      selectedDate: selectedDate ? format(selectedDate, 'yyyy-MM-dd') : null
-    });
-  };
-
-  const formatTimeSlot = (time: Date) => {
+  const formatTimeSlot = useCallback((time: Date) => {
     const userTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
     return time.toLocaleTimeString('en-US', { 
       hour: appState.timeFormat === '24h' ? '2-digit' : 'numeric', 
@@ -489,7 +512,95 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       hour12: appState.timeFormat !== '24h', 
       timeZone: userTimezone 
     });
-  };
+  }, [appState.timezone, appState.timeFormat]);
+
+  const handleTimeSelect = useCallback((slot: TimeSlot) => {
+    const d = new Date(slot.start);
+    setSelectedDate(d);
+    onStateChange({ 
+      selectedTime: slot.start, 
+      selectedDate: format(d, 'yyyy-MM-dd')
+    });
+  }, [onStateChange]);
+
+  const memberEmailToHex = useMemo(() => {
+    const map = new Map<string, string>();
+    selectedMembers.all.forEach(m => map.set(m.email, m.color.hex));
+    return map;
+  }, [selectedMembers.all]);
+
+  const fullCalendarEvents: EventInput[] = useMemo(() => {
+    if (!schedulingSettings || loading) return [];
+
+    const endInclusive = new Date(busyFetchRange.end.getTime() - 1);
+    if (endInclusive < busyFetchRange.start) return [];
+
+    const daysInRange = eachDayOfInterval({ start: busyFetchRange.start, end: endInclusive });
+    const now = new Date();
+
+    const busyEvents: EventInput[] = [];
+    Object.entries(monthlyBusySchedule).forEach(([email, slots]) => {
+      const hex = memberEmailToHex.get(email) || '#64748b';
+      slots.forEach((busy, i) => {
+        busyEvents.push({
+          id: `busy-${email}-${i}-${busy.start}`,
+          start: busy.start,
+          end: busy.end,
+          display: 'background',
+          backgroundColor: `${hex}40`,
+          groupId: 'busy',
+        });
+      });
+    });
+
+    const slotEvents: EventInput[] = [];
+    daysInRange.forEach(day => {
+      if (day < now && !isSameDay(day, now)) return;
+      const slots = generateSlotsForDate(day);
+      slots.forEach((slot, idx) => {
+        const startDt = new Date(slot.start);
+        const endDt = new Date(slot.end);
+        const isSelected = appState.selectedTime === slot.start;
+        slotEvents.push({
+          id: `avail-${slot.start}-${idx}`,
+          title: `${formatTimeSlot(startDt)} – ${formatTimeSlot(endDt)}`,
+          start: slot.start,
+          end: slot.end,
+          extendedProps: { slot, kind: 'available' as const },
+          classNames: isSelected ? ['fc-slot-selected-event'] : ['fc-slot-available-event'],
+          backgroundColor: isSelected ? 'rgba(13, 204, 150, 0.45)' : 'rgba(96, 165, 250, 0.22)',
+          borderColor: isSelected ? '#0dcc96' : 'rgba(255,255,255,0.12)',
+        });
+      });
+    });
+
+    return [...busyEvents, ...slotEvents];
+  }, [
+    schedulingSettings,
+    loading,
+    busyFetchRange.start,
+    busyFetchRange.end,
+    monthlyBusySchedule,
+    memberEmailToHex,
+    generateSlotsForDate,
+    appState.selectedTime,
+    formatTimeSlot,
+  ]);
+
+  const handleFcDatesSet = useCallback((info: DatesSetArg) => {
+    setBusyFetchRange({ start: info.start, end: info.end });
+  }, []);
+
+  const handleFcEventClick = useCallback((info: EventClickArg) => {
+    const slot = info.event.extendedProps?.slot as TimeSlot | undefined;
+    const kind = info.event.extendedProps?.kind;
+    if (kind !== 'available' || !slot) return;
+    info.jsEvent.preventDefault();
+    handleTimeSelect(slot);
+  }, [handleTimeSelect]);
+
+  const fcTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const slotMinutes = appState.duration || 60;
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentMonth(direction === 'next' ? 
@@ -528,15 +639,38 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
   return (
     // Added pb-28 here to ensure content clears the sticky footer
     <div className="flex flex-col h-full gap-4 pb-28">
-      <div className="flex flex-col md:flex-row justify-between items-start gap-4 mb-2 flex-none">
-        <div className="flex-none flex items-center gap-3 pt-1 min-w-[200px]">
-          <Calendar className="w-6 h-6 text-e3-azure" />
-          <div>
-            <h2 className="text-xl font-bold text-e3-white">Select Date & Time</h2>
-            {!appState.isIndividualBooking && (
-              <p className="text-e3-white/60 text-sm">Drag members to change status</p>
-            )}
+      <div className="flex flex-col gap-3 mb-2 flex-none">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
+          <div className="flex-none flex items-center gap-3 pt-1 min-w-[200px]">
+            <Calendar className="w-6 h-6 text-e3-azure" />
+            <div>
+              <h2 className="text-xl font-bold text-e3-white">Select Date & Time</h2>
+              {!appState.isIndividualBooking && (
+                <p className="text-e3-white/60 text-sm">Drag members to change status</p>
+              )}
+            </div>
           </div>
+
+          <Tabs
+            value={availabilityView}
+            onValueChange={(v) => setAvailabilityView(v as 'list' | 'calendar')}
+            className="w-full lg:w-auto lg:shrink-0"
+          >
+            <TabsList className="grid w-full grid-cols-2 lg:inline-flex h-9 bg-e3-space-blue/50 border border-e3-white/10 p-1">
+              <TabsTrigger
+                value="list"
+                className="gap-1.5 px-3 text-xs data-[state=active]:bg-e3-emerald data-[state=active]:text-e3-space-blue"
+              >
+                <List className="w-3.5 h-3.5 shrink-0" /> List view
+              </TabsTrigger>
+              <TabsTrigger
+                value="calendar"
+                className="gap-1.5 px-3 text-xs data-[state=active]:bg-e3-emerald data-[state=active]:text-e3-space-blue"
+              >
+                <LayoutGrid className="w-3.5 h-3.5 shrink-0" /> Calendar view
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
 
         {!appState.isIndividualBooking && (
@@ -684,6 +818,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
       {error && <div className="text-red-400 text-xs bg-red-500/10 p-2 rounded border border-red-500/20">{error}</div>}
 
       <div className="flex-grow min-h-0">
+        {availabilityView === 'list' ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
           <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10 flex flex-col h-full">
             <div className="flex items-center justify-between mb-4 flex-none">
@@ -811,15 +946,14 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
                              
                              <div className="flex flex-wrap gap-1">
                                 {slot.attendees
-                                    .filter(a => a.available)
-                                    .map((attendee: any) => (
+                                    ?.filter((a): a is SlotAttendee => a.available)
+                                    .map((attendee) => (
                                         <div 
                                             key={attendee.email}
                                             style={{ backgroundColor: attendee.color?.hex }}
                                             className="w-1.5 h-1.5 rounded-full"
                                         />
-                                    ))
-                                }
+                                    ))}
                              </div>
                            </button>
                          );
@@ -837,6 +971,80 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({ appState, onNext, o
              </div>
           </div>
         </div>
+        ) : (
+        <div className="flex flex-col gap-4">
+          <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10">
+            <div className="flex flex-col gap-3 flex-none border-b border-e3-white/5 pb-3 mb-1">
+              <div className="flex items-center justify-between">
+                <h3 className="text-e3-white font-semibold text-sm">Duration</h3>
+                <div className="flex items-center gap-1 bg-e3-space-blue border border-e3-white/10 rounded-md p-0.5">
+                  <button type="button" onClick={() => onStateChange({ timeFormat: '12h' })} className={`px-2 py-0.5 text-[10px] rounded ${appState.timeFormat === '12h' ? 'bg-e3-azure text-white' : 'text-e3-white/50'}`}>12h</button>
+                  <button type="button" onClick={() => onStateChange({ timeFormat: '24h' })} className={`px-2 py-0.5 text-[10px] rounded ${appState.timeFormat === '24h' ? 'bg-e3-azure text-white' : 'text-e3-white/50'}`}>24h</button>
+                </div>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {[15, 30, 45, 60, 90].map(dur => (
+                  <button
+                    type="button"
+                    key={dur}
+                    onClick={() => onStateChange({ duration: dur })}
+                    className={`flex-1 min-w-[52px] py-1.5 text-xs rounded border transition-colors ${appState.duration === dur ? 'bg-e3-emerald text-e3-space-blue border-e3-emerald font-medium' : 'border-e3-white/10 text-e3-white/70 hover:border-e3-white/30'}`}
+                  >
+                    {dur}m
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-e3-white/50 text-xs mt-2">
+              Click an available slot in the grid. Busy times from connected calendars appear shaded.
+            </p>
+          </div>
+
+          <div className="relative bg-e3-space-blue/50 rounded-lg border border-e3-white/10 p-2 overflow-hidden min-h-[320px] sm:min-h-[400px]">
+            {loading && (
+              <div className="absolute inset-0 z-[2] flex flex-col items-center justify-center bg-e3-space-blue/70 rounded-lg backdrop-blur-[1px]">
+                <div className="w-6 h-6 border-2 border-e3-azure/30 border-t-e3-azure rounded-full animate-spin mb-2" />
+                <p className="text-e3-white/60 text-xs">Checking calendars...</p>
+              </div>
+            )}
+            <div className="availability-fc overflow-x-auto -mx-1 px-1 pb-1">
+              <FullCalendar
+                key={`fc-${fcTimezone}-${slotMinutes}`}
+                plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+                initialView="timeGridWeek"
+                headerToolbar={{
+                  left: 'prev,next today',
+                  center: 'title',
+                  right: 'timeGridDay,timeGridWeek,dayGridMonth',
+                }}
+                events={fullCalendarEvents}
+                datesSet={handleFcDatesSet}
+                eventClick={handleFcEventClick}
+                selectable={false}
+                timeZone={fcTimezone}
+                firstDay={1}
+                nowIndicator
+                slotMinTime="06:00:00"
+                slotMaxTime="23:00:00"
+                slotDuration={{ minutes: slotMinutes }}
+                snapDuration={{ minutes: slotMinutes }}
+                slotLabelInterval={slotMinutes >= 60 ? { hours: 1 } : { minutes: 30 }}
+                allDaySlot={false}
+                height={520}
+                scrollTime="08:00:00"
+                eventOrder="start"
+              />
+            </div>
+          </div>
+
+          <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10">
+            <TimezoneSelector
+              value={appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone}
+              onChange={(timezone) => onStateChange({ timezone })}
+            />
+          </div>
+        </div>
+        )}
       </div>
 
       {/* Unified Sticky Footer (Mobile & Desktop) */}

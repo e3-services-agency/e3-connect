@@ -170,32 +170,144 @@ All colors MUST be HSL.
   background: hsl(var(--azure) / 0.7);
 }
 
-/* FullCalendar — AvailabilityStep (dark / E3) */
+/* FullCalendar — AvailabilityStep (dark column + embed light column) */
 .availability-fc .fc {
-  --fc-border-color: rgba(255, 255, 255, 0.1);
+  --fc-border-color: rgba(255, 255, 255, 0.2);
   --fc-page-bg-color: transparent;
-  --fc-neutral-bg-color: rgba(255, 255, 255, 0.04);
-  --fc-list-event-hover-bg-color: rgba(255, 255, 255, 0.06);
-  --fc-today-bg-color: rgba(13, 204, 150, 0.08);
+  --fc-neutral-bg-color: rgba(255, 255, 255, 0.06);
+  --fc-list-event-hover-bg-color: rgba(255, 255, 255, 0.08);
+  --fc-today-bg-color: rgba(13, 204, 150, 0.12);
   --fc-now-indicator-color: #0dcc96;
-  --fc-button-bg-color: rgba(255, 255, 255, 0.06);
-  --fc-button-border-color: rgba(255, 255, 255, 0.15);
+  --fc-button-bg-color: rgba(255, 255, 255, 0.08);
+  --fc-button-border-color: rgba(255, 255, 255, 0.22);
   --fc-button-text-color: hsl(var(--foreground));
-  --fc-button-hover-bg-color: rgba(255, 255, 255, 0.1);
+  --fc-button-hover-bg-color: rgba(255, 255, 255, 0.14);
+  --fc-button-active-bg-color: rgba(13, 204, 150, 0.3);
+}
+
+.availability-fc .fc .fc-scrollgrid,
+.availability-fc .fc .fc-scrollgrid-section > td {
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+.availability-fc .fc .fc-col-header-cell {
+  color: rgba(255, 255, 255, 0.95);
+  font-weight: 600;
+}
+
+.availability-fc .fc .fc-timegrid-axis,
+.availability-fc .fc .fc-timegrid-slot-label {
+  color: rgba(255, 255, 255, 0.88);
+  font-variant-numeric: tabular-nums;
+}
+
+.availability-fc .fc .fc-timegrid-slot-minor {
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Busy (background) — distinct, non-clickable */
+.availability-fc .fc-event.fc-slot-busy-bg.fc-bg-event {
+  opacity: 1 !important;
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(180, 70, 70, 0.28),
+    rgba(180, 70, 70, 0.28) 4px,
+    rgba(90, 35, 35, 0.22) 4px,
+    rgba(90, 35, 35, 0.22) 8px
+  ) !important;
+  border: 1px solid rgba(255, 120, 120, 0.28) !important;
+  pointer-events: none;
+}
+
+/* Available slots — button-like */
+.availability-fc .fc-timegrid-event.fc-slot-available-event {
+  cursor: pointer;
+  border: none !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition:
+    filter 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.availability-fc .fc-timegrid-event.fc-slot-available-event .fc-event-main {
+  background: linear-gradient(180deg, #12d598 0%, #0a9f72 100%) !important;
+  color: #ffffff !important;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+.availability-fc .fc-timegrid-event.fc-slot-available-event .fc-event-title,
+.availability-fc .fc-timegrid-event.fc-slot-available-event .fc-event-time {
+  color: #ffffff !important;
+}
+
+.availability-fc .fc-timegrid-event.fc-slot-available-event:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(13, 204, 150, 0.45);
+}
+
+/* Selected slot */
+.availability-fc .fc-timegrid-event.fc-slot-selected-event .fc-event-main {
+  background: linear-gradient(180deg, #0dcc96 0%, #078c6a 100%) !important;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
+.availability-fc .fc-timegrid-event.fc-slot-selected-event {
+  box-shadow: 0 0 0 2px #0dcc96, 0 4px 16px rgba(13, 204, 150, 0.5) !important;
+  z-index: 3 !important;
+}
+
+/* Embed: white panel — grid + text + busy/slots tuned for light bg */
+.availability-fc--embed .fc {
+  --fc-border-color: rgba(15, 23, 42, 0.12);
+  --fc-page-bg-color: #ffffff;
+  --fc-neutral-bg-color: rgba(15, 23, 42, 0.04);
+  --fc-today-bg-color: rgba(16, 185, 129, 0.1);
+  --fc-button-bg-color: #f1f5f9;
+  --fc-button-border-color: #e2e8f0;
+  --fc-button-text-color: #0f172a;
+  --fc-button-hover-bg-color: #e2e8f0;
   --fc-button-active-bg-color: rgba(13, 204, 150, 0.25);
 }
 
-.availability-fc .fc .fc-col-header-cell,
-.availability-fc .fc .fc-timegrid-axis,
-.availability-fc .fc .fc-timegrid-slot-label {
-  color: hsl(var(--foreground) / 0.85);
+.availability-fc--embed .fc .fc-scrollgrid,
+.availability-fc--embed .fc .fc-scrollgrid-section > td {
+  border-color: rgba(15, 23, 42, 0.1) !important;
 }
 
-.availability-fc .fc .fc-slot-available-event {
-  cursor: pointer;
-  border-radius: 4px;
+.availability-fc--embed .fc .fc-col-header-cell {
+  color: #0f172a;
 }
 
-.availability-fc .fc .fc-slot-selected-event {
-  box-shadow: 0 0 0 2px #0dcc96;
+.availability-fc--embed .fc .fc-timegrid-axis,
+.availability-fc--embed .fc .fc-timegrid-slot-label {
+  color: #334155;
+}
+
+.availability-fc--embed .fc .fc-timegrid-slot-minor {
+  border-color: rgba(15, 23, 42, 0.06);
+}
+
+.availability-fc--embed .fc-event.fc-slot-busy-bg.fc-bg-event {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(185, 80, 80, 0.2),
+    rgba(185, 80, 80, 0.2) 4px,
+    rgba(120, 50, 50, 0.14) 4px,
+    rgba(120, 50, 50, 0.14) 8px
+  ) !important;
+  border: 1px solid rgba(200, 100, 100, 0.22) !important;
+}
+
+.availability-fc--embed .fc-timegrid-event.fc-slot-available-event {
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+}
+
+.availability-fc--embed .fc-timegrid-event.fc-slot-available-event:hover {
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
 }

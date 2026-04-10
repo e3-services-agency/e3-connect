@@ -581,12 +581,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     handleTimeSelect,
   ]);
 
-  const memberEmailToHex = useMemo(() => {
-    const map = new Map<string, string>();
-    selectedMembers.all.forEach(m => map.set(m.email, m.color.hex));
-    return map;
-  }, [selectedMembers.all]);
-
   const fullCalendarEvents: EventInput[] = useMemo(() => {
     if (!schedulingSettings || loading) return [];
 
@@ -598,14 +592,13 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
 
     const busyEvents: EventInput[] = [];
     Object.entries(monthlyBusySchedule).forEach(([email, slots]) => {
-      const hex = memberEmailToHex.get(email) || '#64748b';
       slots.forEach((busy, i) => {
         busyEvents.push({
           id: `busy-${email}-${i}-${busy.start}`,
           start: busy.start,
           end: busy.end,
           display: 'background',
-          backgroundColor: `${hex}40`,
+          classNames: ['fc-slot-busy-bg'],
           groupId: 'busy',
         });
       });
@@ -626,8 +619,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
           end: slot.end,
           extendedProps: { slot, kind: 'available' as const },
           classNames: isSelected ? ['fc-slot-selected-event'] : ['fc-slot-available-event'],
-          backgroundColor: isSelected ? 'rgba(13, 204, 150, 0.45)' : 'rgba(96, 165, 250, 0.22)',
-          borderColor: isSelected ? '#0dcc96' : 'rgba(255,255,255,0.12)',
         });
       });
     });
@@ -639,7 +630,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     busyFetchRange.start,
     busyFetchRange.end,
     monthlyBusySchedule,
-    memberEmailToHex,
     generateSlotsForDate,
     appState.selectedTime,
     formatTimeSlot,
@@ -659,6 +649,18 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
 
   const fcTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const slotMinutes = appState.duration || 60;
+
+  const fcFormats = useMemo(() => {
+    const is24 = appState.timeFormat === '24h';
+    return {
+      slotLabelFormat: is24
+        ? { hour: '2-digit', minute: '2-digit', hour12: false }
+        : { hour: 'numeric', minute: '2-digit', meridiem: 'short' as const },
+      eventTimeFormat: is24
+        ? { hour: '2-digit', minute: '2-digit', hour12: false }
+        : { hour: 'numeric', minute: '2-digit', meridiem: 'short' as const },
+    };
+  }, [appState.timeFormat]);
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentMonth(direction === 'next' ? 
@@ -1088,9 +1090,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                 <p className="text-e3-white/60 text-xs">Checking calendars...</p>
               </div>
             )}
-            <div className="availability-fc overflow-x-auto -mx-1 px-1 pb-1">
+            <div
+              className={`availability-fc overflow-x-auto -mx-1 px-1 pb-1 ${isEmbed ? 'availability-fc--embed' : ''}`}
+            >
               <FullCalendar
-                key={`fc-${fcTimezone}-${slotMinutes}`}
+                key={`fc-${fcTimezone}-${slotMinutes}-${appState.timeFormat}`}
                 plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
                 initialView="timeGridWeek"
                 headerToolbar={{
@@ -1110,10 +1114,13 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                 slotDuration={{ minutes: slotMinutes }}
                 snapDuration={{ minutes: slotMinutes }}
                 slotLabelInterval={slotMinutes >= 60 ? { hours: 1 } : { minutes: 30 }}
+                slotLabelFormat={fcFormats.slotLabelFormat}
+                eventTimeFormat={fcFormats.eventTimeFormat}
                 allDaySlot={false}
                 height={520}
                 scrollTime="08:00:00"
                 eventOrder="start"
+                displayEventTime
               />
             </div>
           </div>

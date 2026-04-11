@@ -62,6 +62,16 @@ const monthCalendarSpan = (month: Date) => {
   return { start, end };
 };
 
+/** Darker edge for busy blocks (Google-style border). */
+const darkenBorderHex = (hex: string, factor = 0.62): string => {
+  const n = hex.replace('#', '');
+  if (n.length !== 6) return hex;
+  const r = Math.round(parseInt(n.slice(0, 2), 16) * factor);
+  const g = Math.round(parseInt(n.slice(2, 4), 16) * factor);
+  const b = Math.round(parseInt(n.slice(4, 6), 16) * factor);
+  return `rgb(${r},${g},${b})`;
+};
+
 const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
   appState,
   onNext,
@@ -231,6 +241,21 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
       all: selectedMembers.all.map(member => member?.email).filter(Boolean) as string[]
     };
   }, [selectedMembers]);
+
+  /** Same color assignment as list view — keyed by email for busy calendar blocks. */
+  const memberDisplayByEmail = useMemo(() => {
+    const sortedAllMembers = [...connectedMembers].sort((a, b) => a.name.localeCompare(b.name));
+    const assignColor = (memberId: string): MemberColor => {
+      const index = sortedAllMembers.findIndex(m => m.id === memberId);
+      return MEMBER_COLORS[Math.max(0, index) % MEMBER_COLORS.length];
+    };
+    const map = new Map<string, { name: string; color: MemberColor }>();
+    for (const m of connectedMembers) {
+      if (!m.email) continue;
+      map.set(m.email.toLowerCase().trim(), { name: m.name, color: assignColor(m.id) });
+    }
+    return map;
+  }, [connectedMembers]);
 
   const calendarDays = useMemo(() => {
     const start = startOfWeek(startOfMonth(currentMonth), { weekStartsOn: 1 });
@@ -600,14 +625,21 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
 
     const busyEvents: EventInput[] = [];
     Object.entries(monthlyBusySchedule).forEach(([email, slots]) => {
+      const key = email.toLowerCase().trim();
+      const display = memberDisplayByEmail.get(key);
+      const hex = display?.color.hex ?? '#64748b';
+      const memberName = display?.name ?? email.split('@')[0] ?? email;
       slots.forEach((busy, i) => {
         busyEvents.push({
           id: `busy-${email}-${i}-${busy.start}`,
+          title: memberName,
           start: busy.start,
           end: busy.end,
-          display: 'background',
-          classNames: ['fc-slot-busy-bg'],
-          groupId: 'busy',
+          backgroundColor: hex,
+          borderColor: darkenBorderHex(hex),
+          textColor: '#ffffff',
+          extendedProps: { kind: 'busy' as const },
+          classNames: ['fc-slot-busy'],
         });
       });
     });
@@ -640,6 +672,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     appState.selectedTime,
     appState.requiredMembers,
     appState.optionalMembers,
+    memberDisplayByEmail,
   ]);
 
   const fcTeamCompositionKey = useMemo(() => {
@@ -653,8 +686,12 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
   }, []);
 
   const handleFcEventClick = useCallback((info: EventClickArg) => {
-    const slot = info.event.extendedProps?.slot as TimeSlot | undefined;
     const kind = info.event.extendedProps?.kind;
+    if (kind === 'busy') {
+      info.jsEvent.preventDefault();
+      return;
+    }
+    const slot = info.event.extendedProps?.slot as TimeSlot | undefined;
     if (kind !== 'available' || !slot) return;
     info.jsEvent.preventDefault();
     handleTimeSelect(slot);
@@ -677,8 +714,30 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
 
   const renderFcEventContent = useCallback(
     (arg: EventContentArg) => {
-      const slot = arg.event.extendedProps?.slot as TimeSlot | undefined;
       const kind = arg.event.extendedProps?.kind;
+
+      if (kind === 'busy') {
+        const title = arg.event.title || '';
+        const start = arg.event.start;
+        const end = arg.event.end;
+        if (!start || !end) return null;
+        const startDt = start instanceof Date ? start : new Date(start);
+        const endDt = end instanceof Date ? end : new Date(end);
+        const timeLabel = `${formatTimeSlot(startDt)} – ${formatTimeSlot(endDt)}`;
+        return (
+          <div
+            className={`fc-busy-inner flex min-h-0 flex-col gap-0.5 overflow-hidden px-0.5 py-0.5 text-[10px] leading-tight ${
+              isEmbed ? 'text-slate-900' : 'text-white'
+            }`}
+            style={isEmbed ? undefined : { textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}
+          >
+            <div className="truncate font-semibold">{title}</div>
+            <div className={`truncate ${isEmbed ? 'text-slate-700' : 'text-white/90'}`}>{timeLabel}</div>
+          </div>
+        );
+      }
+
+      const slot = arg.event.extendedProps?.slot as TimeSlot | undefined;
       if (kind !== 'available' || !slot) {
         return null;
       }
@@ -703,7 +762,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
         </div>
       );
     },
-    [formatTimeSlot]
+    [formatTimeSlot, isEmbed]
   );
 
   const navigateMonth = (direction: 'prev' | 'next') => {
@@ -1123,7 +1182,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
               </div>
             </div>
             <p className="text-e3-white/50 text-xs mt-2">
-              Diagonal stripes show busy time from connected calendars. Click a green slot to select it.
+              Colored blocks show when team members are busy (side-by-side when overlapping). Click a green slot to book.
             </p>
           </div>
 

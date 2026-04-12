@@ -245,49 +245,10 @@ All colors MUST be HSL.
 
 /* Outside business hours (background layer) */
 .availability-fc .fc-event.fc-non-business-bg.fc-bg-event {
-  position: relative;
-  overflow: visible !important;
   background: rgba(0, 0, 0, 0.42) !important;
   opacity: 1 !important;
   border: none !important;
   pointer-events: none;
-}
-
-.availability-fc .fc-non-business-label-wrap {
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 2px 4px;
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1.2;
-  text-align: center;
-  pointer-events: none;
-  color: rgba(255, 255, 255, 0.92);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
-}
-
-.availability-fc--embed .fc-non-business-label-wrap {
-  color: #64748b;
-  text-shadow: none;
-}
-
-.availability-fc .fc-slot-label-major {
-  font-weight: 600;
-  opacity: 1;
-}
-
-.availability-fc .fc-slot-label-minor {
-  font-size: 0.65rem;
-  font-weight: 400;
-  opacity: 0.55;
-}
-
-.availability-fc--embed .fc-slot-label-minor {
-  opacity: 0.65;
 }
 
 /* Current time — more visible on dark grid */

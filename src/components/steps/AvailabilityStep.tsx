@@ -3,6 +3,7 @@ import { Calendar, Clock, ChevronLeft, ChevronRight, X, Trash2, GripHorizontal, 
 import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
 import FullCalendar from '@fullcalendar/react';
 import type { DatesSetArg, EventClickArg, EventContentArg, EventInput } from '@fullcalendar/core';
+import luxon3Plugin from '@fullcalendar/luxon3';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -1198,7 +1199,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
             >
               <FullCalendar
                 key={`fc-${fcTimezone}-${slotMinutes}-${appState.timeFormat}-${fcTeamCompositionKey}`}
-                plugins={[timeGridPlugin, interactionPlugin]}
+                plugins={[luxon3Plugin, timeGridPlugin, interactionPlugin]}
                 initialView="timeGridWeek"
                 headerToolbar={{
                   left: 'prev,next today',

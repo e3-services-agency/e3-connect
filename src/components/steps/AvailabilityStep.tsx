@@ -2,7 +2,14 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Calendar, Clock, ChevronLeft, ChevronRight, X, Trash2, GripHorizontal, Loader, List, LayoutGrid } from 'lucide-react';
 import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
 import FullCalendar from '@fullcalendar/react';
-import type { DatesSetArg, EventClickArg, EventContentArg, EventInput } from '@fullcalendar/core';
+import type {
+  DatesSetArg,
+  EventClickArg,
+  EventContentArg,
+  EventInput,
+  EventMountArg,
+  SlotLabelContentArg,
+} from '@fullcalendar/core';
 import luxon3Plugin from '@fullcalendar/luxon3';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
@@ -44,10 +51,15 @@ interface MemberColor {
   hex: string;
 }
 
+/** Grid step for FullCalendar time axis (decoupled from meeting duration). */
+const FC_GRID_SLOT_MINUTES = 30;
+const FC_SNAP_MINUTES = 15;
+
 const MEMBER_COLORS: MemberColor[] = [
   { border: 'border-blue-500/40', bg: 'bg-blue-500/20', text: 'text-blue-400', hex: '#60a5fa' },
   { border: 'border-orange-500/40', bg: 'bg-orange-500/20', text: 'text-orange-400', hex: '#fb923c' },
-  { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-400', hex: '#34d399' },
+  /** Amber — distinct from bookable slot green `#0DCC96`. */
+  { border: 'border-amber-500/40', bg: 'bg-amber-500/20', text: 'text-amber-400', hex: '#f59e0b' },
   { border: 'border-purple-500/40', bg: 'bg-purple-500/20', text: 'text-purple-400', hex: '#c084fc' },
   { border: 'border-yellow-500/40', bg: 'bg-yellow-500/20', text: 'text-yellow-400', hex: '#facc15' },
   { border: 'border-pink-500/40', bg: 'bg-pink-500/20', text: 'text-pink-400', hex: '#f472b6' },
@@ -133,6 +145,7 @@ const buildNonBusinessBackgroundEvents = (
         end: end.toISO()!,
         classNames: ['fc-non-business-bg'],
         groupId: 'nonbiz',
+        extendedProps: { kind: 'nonbusiness' as const },
       });
     };
 
@@ -758,25 +771,28 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     });
 
     const slotEvents: EventInput[] = [];
-    daysInRange.forEach(day => {
-      if (day < now && !isSameDay(day, now)) return;
-      const slots = generateSlotsForDate(day);
-      slots.forEach((slot, idx) => {
-        const isSelected = appState.selectedTime === slot.start;
-        slotEvents.push({
-          id: `avail-${slot.start}-${idx}`,
-          title: '',
-          start: slot.start,
-          end: slot.end,
-          extendedProps: { slot, kind: 'available' as const },
-          classNames: isSelected ? ['fc-slot-selected-event'] : ['fc-slot-available-event'],
+    if (!loading) {
+      daysInRange.forEach(day => {
+        if (day < now && !isSameDay(day, now)) return;
+        const slots = generateSlotsForDate(day);
+        slots.forEach((slot, idx) => {
+          const isSelected = appState.selectedTime === slot.start;
+          slotEvents.push({
+            id: `avail-${slot.start}-${idx}`,
+            title: '',
+            start: slot.start,
+            end: slot.end,
+            extendedProps: { slot, kind: 'available' as const },
+            classNames: isSelected ? ['fc-slot-selected-event'] : ['fc-slot-available-event'],
+          });
         });
       });
-    });
+    }
 
     return [...nonBizEvents, ...busyEvents, ...slotEvents];
   }, [
     schedulingSettings,
+    loading,
     busyFetchRange.start,
     busyFetchRange.end,
     monthlyBusySchedule,
@@ -835,8 +851,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     handleTimeSelect(slot);
   }, [handleTimeSelect]);
 
-  const slotMinutes = appState.duration || 60;
-
   const fcFormats = useMemo(() => {
     const is24 = appState.timeFormat === '24h';
     return {
@@ -848,6 +862,35 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
         : { hour: 'numeric', minute: '2-digit', meridiem: 'short' as const },
     };
   }, [appState.timeFormat]);
+
+  const handleFcEventDidMount = useCallback((info: EventMountArg) => {
+    if (info.event.extendedProps?.kind !== 'nonbusiness') return;
+    const host = info.el as HTMLElement;
+    host.style.overflow = 'visible';
+    const wrap = document.createElement('div');
+    wrap.className = 'fc-non-business-label-wrap';
+    wrap.textContent = 'Outside of business hours';
+    host.appendChild(wrap);
+  }, []);
+
+  const handleFcEventWillUnmount = useCallback((info: EventMountArg) => {
+    if (info.event.extendedProps?.kind !== 'nonbusiness') return;
+    (info.el as HTMLElement).querySelector('.fc-non-business-label-wrap')?.remove();
+  }, []);
+
+  const renderFcSlotLabelContent = useCallback(
+    (arg: SlotLabelContentArg) => {
+      const isHour = arg.date.getMinutes() === 0;
+      return (
+        <div
+          className={`w-full text-right tabular-nums ${isHour ? 'fc-slot-label-major' : 'fc-slot-label-minor'}`}
+        >
+          {arg.text}
+        </div>
+      );
+    },
+    []
+  );
 
   const renderFcEventContent = useCallback(
     (arg: EventContentArg) => {
@@ -985,13 +1028,13 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
             <TabsList className={tx.tabsList}>
               <TabsTrigger
                 value="list"
-                className="gap-1.5 px-3 text-xs data-[state=active]:bg-e3-emerald data-[state=active]:text-e3-space-blue"
+                className="gap-1.5 px-3 text-xs data-[state=active]:bg-e3-azure data-[state=active]:text-white"
               >
                 <List className="w-3.5 h-3.5 shrink-0" /> List view
               </TabsTrigger>
               <TabsTrigger
                 value="calendar"
-                className="gap-1.5 px-3 text-xs data-[state=active]:bg-e3-emerald data-[state=active]:text-e3-space-blue"
+                className="gap-1.5 px-3 text-xs data-[state=active]:bg-e3-azure data-[state=active]:text-white"
               >
                 <LayoutGrid className="w-3.5 h-3.5 shrink-0" /> Calendar view
               </TabsTrigger>
@@ -1042,7 +1085,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
       {!appState.isIndividualBooking && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-none">
           <div 
-            className={`rounded-lg p-3 border border-e3-azure/20 transition-colors min-h-[80px] ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-e3-emerald/50' : 'bg-e3-space-blue/30'}`}
+            className={`rounded-lg p-3 border border-e3-azure/20 transition-colors min-h-[80px] ${draggedMember ? 'bg-e3-space-blue/40 border-dashed border-e3-azure/50' : 'bg-e3-space-blue/30'}`}
             onDragOver={handleDragOver}
             onDrop={(e) => handleDrop(e, 'required')}
           >
@@ -1183,7 +1226,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                     className={`
                       h-10 sm:h-9 md:h-10 w-full rounded-md text-xs font-medium relative flex flex-col items-center justify-center gap-1 transition-all
                       ${!isCurrentMonth ? (isEmbed ? 'text-slate-300' : 'text-e3-white/10')
-                        : isSelected ? 'bg-e3-emerald text-e3-space-blue font-bold shadow-lg' 
+                        : isSelected ? 'bg-e3-azure text-white font-bold shadow-lg' 
                         : isWorkDay && !isPast && hasAvailability
                           ? (isEmbed ? 'text-slate-800 bg-slate-100 hover:bg-slate-200' : 'text-e3-white bg-e3-white/5 hover:bg-e3-white/10')
                         : (isEmbed ? 'text-slate-300 cursor-not-allowed' : 'text-e3-white/20 cursor-not-allowed')}
@@ -1225,7 +1268,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                     type="button"
                     key={dur} 
                     onClick={() => onStateChange({ duration: dur })}
-                    className={`flex-1 py-1.5 text-xs rounded border transition-colors ${appState.duration === dur ? 'bg-e3-emerald text-e3-space-blue border-e3-emerald font-medium' : isEmbed ? 'border-slate-200 text-slate-700 hover:border-slate-300' : 'border-e3-white/10 text-e3-white/70 hover:border-e3-white/30'}`}
+                    className={`flex-1 py-1.5 text-xs rounded border transition-colors ${appState.duration === dur ? 'bg-e3-azure text-white border-e3-azure font-medium' : isEmbed ? 'border-slate-200 text-slate-700 hover:border-slate-300' : 'border-e3-white/10 text-e3-white/70 hover:border-e3-white/30'}`}
                   >
                     {dur}m
                   </button>
@@ -1263,13 +1306,13 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                              className={`
                                py-2 px-2 rounded-md text-xs font-medium border transition-all flex flex-col items-start gap-1
                                ${isSelected 
-                                 ? 'bg-e3-emerald text-e3-space-blue border-e3-emerald shadow-md' 
-                                 : 'bg-e3-space-blue/40 border-e3-white/10 text-e3-white hover:border-e3-emerald/50 hover:bg-e3-white/5'}
+                                 ? 'bg-e3-azure text-white border-e3-azure shadow-md' 
+                                 : 'bg-e3-space-blue/40 border-e3-white/10 text-e3-white hover:border-e3-azure/50 hover:bg-e3-white/5'}
                              `}
                            >
                              <div className="flex justify-between w-full items-center">
                                 <span>{formatTimeSlot(new Date(slot.start))}</span>
-                                {isSelected && <div className="w-1 h-1 bg-e3-space-blue rounded-full" />}
+                                {isSelected && <div className="w-1 h-1 rounded-full bg-white" />}
                              </div>
                              
                              <div className="flex flex-wrap gap-1">
@@ -1316,7 +1359,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                     type="button"
                     key={dur}
                     onClick={() => onStateChange({ duration: dur })}
-                    className={`flex-1 min-w-[52px] py-1.5 text-xs rounded border transition-colors ${appState.duration === dur ? 'bg-e3-emerald text-e3-space-blue border-e3-emerald font-medium' : 'border-e3-white/10 text-e3-white/70 hover:border-e3-white/30'}`}
+                    className={`flex-1 min-w-[52px] py-1.5 text-xs rounded border transition-colors ${appState.duration === dur ? 'bg-e3-azure text-white border-e3-azure font-medium' : 'border-e3-white/10 text-e3-white/70 hover:border-e3-white/30'}`}
                   >
                     {dur}m
                   </button>
@@ -1372,7 +1415,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                     type="button"
                     className={`rounded border px-2.5 py-1.5 text-xs ${
                       fcActiveView === 'timeGridDay'
-                        ? 'border-e3-emerald bg-e3-emerald/25 text-white'
+                        ? 'border-e3-azure bg-e3-azure/25 text-white'
                         : 'border-e3-white/20 bg-e3-space-blue/60 text-e3-white/85 hover:bg-e3-white/10'
                     }`}
                     onClick={() => calendarRef.current?.getApi().changeView('timeGridDay')}
@@ -1383,7 +1426,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                     type="button"
                     className={`rounded border px-2.5 py-1.5 text-xs ${
                       fcActiveView === 'timeGridWeek'
-                        ? 'border-e3-emerald bg-e3-emerald/25 text-white'
+                        ? 'border-e3-azure bg-e3-azure/25 text-white'
                         : 'border-e3-white/20 bg-e3-space-blue/60 text-e3-white/85 hover:bg-e3-white/10'
                     }`}
                     onClick={() => calendarRef.current?.getApi().changeView('timeGridWeek')}
@@ -1394,7 +1437,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
               </div>
               <FullCalendar
                 ref={calendarRef}
-                key={`fc-${fcTimezone}-${slotMinutes}-${appState.timeFormat}-${fcTeamCompositionKey}`}
+                key={`fc-${fcTimezone}-${appState.timeFormat}-${fcTeamCompositionKey}`}
                 plugins={[luxon3Plugin, timeGridPlugin, interactionPlugin]}
                 initialView="timeGridWeek"
                 headerToolbar={false}
@@ -1403,16 +1446,19 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                 datesSet={handleFcDatesSet}
                 eventClick={handleFcEventClick}
                 eventContent={renderFcEventContent}
+                eventDidMount={handleFcEventDidMount}
+                eventWillUnmount={handleFcEventWillUnmount}
                 selectable={false}
                 timeZone={fcTimezone}
                 firstDay={1}
                 nowIndicator
                 slotMinTime="09:00:00"
                 slotMaxTime="18:00:00"
-                slotDuration={{ minutes: slotMinutes }}
-                snapDuration={{ minutes: slotMinutes }}
-                slotLabelInterval={slotMinutes >= 60 ? { hours: 1 } : { minutes: 30 }}
+                slotDuration={{ minutes: FC_GRID_SLOT_MINUTES }}
+                snapDuration={{ minutes: FC_SNAP_MINUTES }}
+                slotLabelInterval={{ minutes: 30 }}
                 slotLabelFormat={fcFormats.slotLabelFormat}
+                slotLabelContent={renderFcSlotLabelContent}
                 eventTimeFormat={fcFormats.eventTimeFormat}
                 dayHeaderFormat="EEE d/M"
                 allDaySlot={false}

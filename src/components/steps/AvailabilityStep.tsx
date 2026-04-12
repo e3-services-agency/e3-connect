@@ -15,6 +15,7 @@ import type { ClientTeam, TeamMemberConfig } from '../../types/team';
 import { TimezoneSelector } from '../TimezoneSelector';
 import { useBusinessHours } from '../../hooks/useBusinessHours';
 import EmbedHostPanel, { type EmbedHostEntity } from '../embed/EmbedHostPanel';
+import enGbLocale from '@fullcalendar/core/locales/en-gb';
 
 interface AvailabilityStepProps extends StepProps {
   clientTeamFilter?: string;
@@ -108,6 +109,59 @@ const splitBusySlotsForCalendar = (
   return out;
 };
 
+/** Build background segments for times outside configured business hours (within calendar grid 09–18). */
+const buildNonBusinessBackgroundEvents = (
+  daysInRange: Date[],
+  fcTimezone: string,
+  gridStartHour: number,
+  gridEndHour: number,
+  getWorkingHoursForDate: (d: Date) => { start: string | null; end: string | null }
+): EventInput[] => {
+  const out: EventInput[] = [];
+  daysInRange.forEach(day => {
+    const d0 = DateTime.fromJSDate(day).setZone(fcTimezone).startOf('day');
+    const gridOpen = d0.set({ hour: gridStartHour, minute: 0, second: 0, millisecond: 0 });
+    const gridClose = d0.set({ hour: gridEndHour, minute: 0, second: 0, millisecond: 0 });
+    const work = getWorkingHoursForDate(day);
+
+    const pushBg = (start: DateTime, end: DateTime, seg: number) => {
+      if (end <= start) return;
+      out.push({
+        id: `nonbiz-${d0.toISODate()}-${seg}-${start.toMillis()}`,
+        display: 'background',
+        start: start.toISO()!,
+        end: end.toISO()!,
+        classNames: ['fc-non-business-bg'],
+        groupId: 'nonbiz',
+      });
+    };
+
+    if (!work.start || !work.end) {
+      pushBg(gridOpen, gridClose, 0);
+      return;
+    }
+
+    const [wsH, wsM] = work.start.split(':').map(Number);
+    const [weH, weM] = work.end.split(':').map(Number);
+    let wStart = d0.set({ hour: wsH, minute: wsM || 0, second: 0, millisecond: 0 });
+    let wEnd = d0.set({ hour: weH, minute: weM || 0, second: 0, millisecond: 0 });
+    wStart = DateTime.max(wStart, gridOpen);
+    wEnd = DateTime.min(wEnd, gridClose);
+
+    if (wEnd <= wStart) {
+      pushBg(gridOpen, gridClose, 0);
+      return;
+    }
+    if (wStart > gridOpen) {
+      pushBg(gridOpen, wStart, 1);
+    }
+    if (wEnd < gridClose) {
+      pushBg(wEnd, gridClose, 2);
+    }
+  });
+  return out;
+};
+
 const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
   appState,
   onNext,
@@ -145,7 +199,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     return undefined;
   }, [activeFilter, teamMembers, appState.isIndividualBooking]);
 
-  const { getWorkingHoursForDate, isWorkingDay } = useBusinessHours(
+  const { getWorkingHoursForDate, isWorkingDay, businessHours } = useBusinessHours(
     resolvedTeamId, 
     appState.isIndividualBooking ? appState.individualMember?.id : undefined
   );
@@ -665,6 +719,14 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     const FC_SLOT_MIN_H = 9;
     const FC_SLOT_MAX_H = 18;
 
+    const nonBizEvents = buildNonBusinessBackgroundEvents(
+      daysInRange,
+      fcTimezone,
+      FC_SLOT_MIN_H,
+      FC_SLOT_MAX_H,
+      getWorkingHoursForDate
+    );
+
     const busyEvents: EventInput[] = [];
     Object.entries(monthlyBusySchedule).forEach(([email, slots]) => {
       const key = email.toLowerCase().trim();
@@ -712,13 +774,15 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
       });
     });
 
-    return [...busyEvents, ...slotEvents];
+    return [...nonBizEvents, ...busyEvents, ...slotEvents];
   }, [
     schedulingSettings,
     busyFetchRange.start,
     busyFetchRange.end,
     monthlyBusySchedule,
     generateSlotsForDate,
+    getWorkingHoursForDate,
+    businessHours,
     appState.selectedTime,
     appState.requiredMembers,
     appState.optionalMembers,
@@ -732,9 +796,32 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     return `${req}__${opt}`;
   }, [appState.requiredMembers, appState.optionalMembers]);
 
-  const handleFcDatesSet = useCallback((info: DatesSetArg) => {
-    setBusyFetchRange({ start: info.start, end: info.end });
-  }, []);
+  const calendarRef = useRef<InstanceType<typeof FullCalendar>>(null);
+  const [fcToolbarTitle, setFcToolbarTitle] = useState('');
+  const [fcActiveView, setFcActiveView] = useState<'timeGridDay' | 'timeGridWeek'>('timeGridWeek');
+
+  const handleFcDatesSet = useCallback(
+    (info: DatesSetArg) => {
+      setBusyFetchRange({ start: info.start, end: info.end });
+      setFcActiveView(info.view.type === 'timeGridDay' ? 'timeGridDay' : 'timeGridWeek');
+      const start = DateTime.fromJSDate(info.start).setZone(fcTimezone);
+      const endExclusive = DateTime.fromJSDate(info.end).setZone(fcTimezone);
+      const end = endExclusive.minus({ milliseconds: 1 });
+      if (!start.isValid || !end.isValid) return;
+
+      if (info.view.type === 'timeGridDay') {
+        setFcToolbarTitle(start.setLocale('en-GB').toFormat('EEEE d MMMM yyyy'));
+        return;
+      }
+
+      if (start.month === end.month && start.year === end.year) {
+        setFcToolbarTitle(`${start.day} – ${end.day} ${start.setLocale('en-GB').toFormat('MMMM yyyy')}`);
+      } else {
+        setFcToolbarTitle(`${start.toFormat('d/M/yyyy')} – ${end.toFormat('d/M/yyyy')}`);
+      }
+    },
+    [fcTimezone]
+  );
 
   const handleFcEventClick = useCallback((info: EventClickArg) => {
     const kind = info.event.extendedProps?.kind;
@@ -795,16 +882,21 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
       const endDt = new Date(slot.end);
       const timeLabel = `${formatTimeSlot(startDt)} – ${formatTimeSlot(endDt)}`;
       return (
-        <div className="fc-custom-slot-inner flex min-h-0 flex-col gap-0.5 px-0.5 py-0.5">
-          <div className="text-[10px] font-semibold leading-tight text-white">{timeLabel}</div>
-          <div className="flex flex-wrap gap-0.5">
+        <div className="fc-custom-slot-inner flex min-h-0 w-full min-w-0 flex-col justify-center gap-1 px-1 py-0.5">
+          <div
+            className="fc-avail-time max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[9px] font-semibold leading-none text-white"
+            title={timeLabel}
+          >
+            {timeLabel}
+          </div>
+          <div className="flex shrink-0 flex-nowrap justify-center gap-0.5 overflow-hidden">
             {slot.attendees
               ?.filter((a): a is SlotAttendee => a.available)
               .map((attendee) => (
                 <span
                   key={attendee.email}
                   title={attendee.name}
-                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full ring-1 ring-white/50"
                   style={{ backgroundColor: attendee.color?.hex }}
                 />
               ))}
@@ -1232,29 +1324,81 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
               </div>
             </div>
             <p className="text-e3-white/50 text-xs mt-2">
-              Colored blocks show when team members are busy (side-by-side when overlapping). Click a green slot to book.
+              Colored columns are busy times. Shaded areas are outside business hours. Purple blocks are bookable — click one to select.
             </p>
           </div>
 
           <div className="relative bg-e3-space-blue/50 rounded-lg border border-e3-white/10 p-2 overflow-hidden min-h-[320px] sm:min-h-[400px]">
             {loading && (
-              <div className="absolute inset-0 z-[2] flex flex-col items-center justify-center bg-e3-space-blue/70 rounded-lg backdrop-blur-[1px]">
-                <div className="w-6 h-6 border-2 border-e3-azure/30 border-t-e3-azure rounded-full animate-spin mb-2" />
-                <p className="text-e3-white/60 text-xs">Checking calendars...</p>
+              <div className="pointer-events-none absolute right-2 top-2 z-[6] flex items-center gap-1.5 rounded-md border border-e3-white/10 bg-e3-space-blue/90 px-2 py-1 shadow-sm backdrop-blur-sm">
+                <Loader className="h-3.5 w-3.5 shrink-0 animate-spin text-e3-azure" />
+                <span className="text-[10px] text-e3-white/75">Updating calendars…</span>
               </div>
             )}
             <div
-              className={`availability-fc overflow-x-auto -mx-1 px-1 pb-1 ${isEmbed ? 'availability-fc--embed' : ''}`}
+              className={`availability-fc -mx-1 overflow-x-auto px-1 pb-1 ${isEmbed ? 'availability-fc--embed' : ''}`}
             >
+              <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center justify-center gap-1 sm:justify-start">
+                  <button
+                    type="button"
+                    aria-label="Previous"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded border border-e3-white/20 bg-e3-space-blue/60 text-e3-white hover:bg-e3-white/10"
+                    onClick={() => calendarRef.current?.getApi().prev()}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Next"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded border border-e3-white/20 bg-e3-space-blue/60 text-e3-white hover:bg-e3-white/10"
+                    onClick={() => calendarRef.current?.getApi().next()}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded border border-e3-white/20 bg-e3-space-blue/60 px-2.5 py-1.5 text-xs text-e3-white hover:bg-e3-white/10"
+                    onClick={() => calendarRef.current?.getApi().today()}
+                  >
+                    Today
+                  </button>
+                </div>
+                <h2 className="order-first min-w-0 truncate text-center text-sm font-semibold text-e3-white sm:order-none sm:flex-1 sm:px-2">
+                  {fcToolbarTitle}
+                </h2>
+                <div className="flex items-center justify-center gap-1 sm:justify-end">
+                  <button
+                    type="button"
+                    className={`rounded border px-2.5 py-1.5 text-xs ${
+                      fcActiveView === 'timeGridDay'
+                        ? 'border-e3-emerald bg-e3-emerald/25 text-white'
+                        : 'border-e3-white/20 bg-e3-space-blue/60 text-e3-white/85 hover:bg-e3-white/10'
+                    }`}
+                    onClick={() => calendarRef.current?.getApi().changeView('timeGridDay')}
+                  >
+                    Day
+                  </button>
+                  <button
+                    type="button"
+                    className={`rounded border px-2.5 py-1.5 text-xs ${
+                      fcActiveView === 'timeGridWeek'
+                        ? 'border-e3-emerald bg-e3-emerald/25 text-white'
+                        : 'border-e3-white/20 bg-e3-space-blue/60 text-e3-white/85 hover:bg-e3-white/10'
+                    }`}
+                    onClick={() => calendarRef.current?.getApi().changeView('timeGridWeek')}
+                  >
+                    Week
+                  </button>
+                </div>
+              </div>
               <FullCalendar
+                ref={calendarRef}
                 key={`fc-${fcTimezone}-${slotMinutes}-${appState.timeFormat}-${fcTeamCompositionKey}`}
                 plugins={[luxon3Plugin, timeGridPlugin, interactionPlugin]}
                 initialView="timeGridWeek"
-                headerToolbar={{
-                  left: 'prev,next today',
-                  center: 'title',
-                  right: 'timeGridDay,timeGridWeek',
-                }}
+                headerToolbar={false}
+                locale={enGbLocale}
                 events={fullCalendarEvents}
                 datesSet={handleFcDatesSet}
                 eventClick={handleFcEventClick}
@@ -1270,8 +1414,9 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                 slotLabelInterval={slotMinutes >= 60 ? { hours: 1 } : { minutes: 30 }}
                 slotLabelFormat={fcFormats.slotLabelFormat}
                 eventTimeFormat={fcFormats.eventTimeFormat}
+                dayHeaderFormat="EEE d/M"
                 allDaySlot={false}
-                height={520}
+                contentHeight="auto"
                 scrollTime="09:00:00"
                 eventOrder="start"
                 displayEventTime={false}

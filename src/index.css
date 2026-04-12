@@ -214,7 +214,7 @@ All colors MUST be HSL.
   --fc-page-bg-color: transparent;
   --fc-neutral-bg-color: rgba(255, 255, 255, 0.06);
   --fc-list-event-hover-bg-color: rgba(255, 255, 255, 0.08);
-  --fc-today-bg-color: rgba(13, 204, 150, 0.12);
+  --fc-today-bg-color: rgba(129, 140, 248, 0.14);
   --fc-now-indicator-color: #5eead4;
   --fc-button-bg-color: rgba(255, 255, 255, 0.08);
   --fc-button-border-color: rgba(255, 255, 255, 0.22);
@@ -241,6 +241,14 @@ All colors MUST be HSL.
 
 .availability-fc .fc .fc-timegrid-slot-minor {
   border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Outside business hours (background layer) */
+.availability-fc .fc-event.fc-non-business-bg.fc-bg-event {
+  background: rgba(0, 0, 0, 0.42) !important;
+  opacity: 1 !important;
+  border: none !important;
+  pointer-events: none;
 }
 
 /* Current time — more visible on dark grid */
@@ -293,10 +301,10 @@ All colors MUST be HSL.
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-available-event .fc-event-main {
-  background: linear-gradient(180deg, #12d598 0%, #0a9f72 100%) !important;
+  background: linear-gradient(180deg, #818cf8 0%, #6366f1 100%) !important;
   color: #ffffff !important;
   font-weight: 600;
-  padding: 2px 6px;
+  padding: 2px 4px;
   border-radius: 8px;
 }
 
@@ -309,20 +317,20 @@ All colors MUST be HSL.
   filter: brightness(1.08);
   transform: translateY(-1px);
   box-shadow:
-    0 4px 18px rgba(13, 204, 150, 0.55),
+    0 4px 18px rgba(99, 102, 241, 0.55),
     0 0 0 1px rgba(255, 255, 255, 0.3);
 }
 
 /* Selected slot */
 .availability-fc .fc-timegrid-event.fc-slot-selected-event .fc-event-main {
-  background: linear-gradient(180deg, #0dcc96 0%, #078c6a 100%) !important;
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
+  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%) !important;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.4);
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-selected-event {
   box-shadow:
-    0 0 0 2px #0dcc96,
-    0 4px 18px rgba(13, 204, 150, 0.55),
+    0 0 0 2px #a5b4fc,
+    0 4px 18px rgba(99, 102, 241, 0.55),
     0 0 0 1px rgba(255, 255, 255, 0.28) !important;
   z-index: 12 !important;
 }
@@ -332,7 +340,7 @@ All colors MUST be HSL.
   --fc-border-color: rgba(15, 23, 42, 0.12);
   --fc-page-bg-color: #ffffff;
   --fc-neutral-bg-color: rgba(15, 23, 42, 0.04);
-  --fc-today-bg-color: rgba(16, 185, 129, 0.1);
+  --fc-today-bg-color: rgba(129, 140, 248, 0.12);
   --fc-button-bg-color: #f1f5f9;
   --fc-button-border-color: #e2e8f0;
   --fc-button-text-color: #0f172a;
@@ -356,6 +364,10 @@ All colors MUST be HSL.
 
 .availability-fc--embed .fc .fc-timegrid-slot-minor {
   border-color: rgba(15, 23, 42, 0.06);
+}
+
+.availability-fc--embed .fc-event.fc-non-business-bg.fc-bg-event {
+  background: rgba(15, 23, 42, 0.07) !important;
 }
 
 .availability-fc--embed .fc {

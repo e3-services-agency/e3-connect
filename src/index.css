@@ -249,6 +249,12 @@ All colors MUST be HSL.
   opacity: 1 !important;
   border: none !important;
   pointer-events: none;
+  position: relative;
+  overflow: visible !important;
+}
+
+.availability-fc .fc-event.fc-non-business-bg.fc-bg-event .fc-nonbiz-label-wrap {
+  align-items: flex-start;
 }
 
 /* Current time — more visible on dark grid */
@@ -301,7 +307,7 @@ All colors MUST be HSL.
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-available-event .fc-event-main {
-  background: linear-gradient(180deg, #818cf8 0%, #6366f1 100%) !important;
+  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%) !important;
   color: #ffffff !important;
   font-weight: 600;
   padding: 2px 4px;
@@ -317,20 +323,20 @@ All colors MUST be HSL.
   filter: brightness(1.08);
   transform: translateY(-1px);
   box-shadow:
-    0 4px 18px rgba(99, 102, 241, 0.55),
+    0 4px 18px rgba(22, 163, 74, 0.55),
     0 0 0 1px rgba(255, 255, 255, 0.3);
 }
 
-/* Selected slot */
+/* Selected slot — bookable green, distinct from member “Pale Green” */
 .availability-fc .fc-timegrid-event.fc-slot-selected-event .fc-event-main {
-  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%) !important;
+  background: linear-gradient(180deg, #16a34a 0%, #15803d 100%) !important;
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.4);
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-selected-event {
   box-shadow:
-    0 0 0 2px #a5b4fc,
-    0 4px 18px rgba(99, 102, 241, 0.55),
+    0 0 0 2px #4ade80,
+    0 4px 18px rgba(22, 163, 74, 0.55),
     0 0 0 1px rgba(255, 255, 255, 0.28) !important;
   z-index: 12 !important;
 }

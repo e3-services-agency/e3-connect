@@ -6,6 +6,7 @@ import type { DatesSetArg, EventClickArg, EventContentArg, EventInput } from '@f
 import luxon3Plugin from '@fullcalendar/luxon3';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
+import { DateTime } from 'luxon';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useTeamData } from '../../hooks/useTeamData';
 import { supabase } from '../../integrations/supabase/client';
@@ -71,6 +72,40 @@ const darkenBorderHex = (hex: string, factor = 0.62): string => {
   const g = Math.round(parseInt(n.slice(2, 4), 16) * factor);
   const b = Math.round(parseInt(n.slice(4, 6), 16) * factor);
   return `rgb(${r},${g},${b})`;
+};
+
+/** Split multi-day / overnight busy into per-day segments, then clip to calendar grid window (matches FullCalendar slotMin/slotMax). */
+const splitBusySlotsForCalendar = (
+  startIso: string,
+  endIso: string,
+  zone: string,
+  slotMinHour: number,
+  slotMaxHour: number
+): { start: string; end: string }[] => {
+  const start = DateTime.fromISO(startIso).setZone(zone);
+  const end = DateTime.fromISO(endIso).setZone(zone);
+  if (!start.isValid || !end.isValid || end <= start) return [];
+
+  const out: { start: string; end: string }[] = [];
+  let segStart = start;
+
+  while (segStart < end) {
+    const nextMidnight = segStart.startOf('day').plus({ days: 1 });
+    const segEnd = DateTime.min(end, nextMidnight);
+    if (segEnd > segStart) {
+      const dayStart = segStart.startOf('day');
+      const windowOpen = dayStart.set({ hour: slotMinHour, minute: 0, second: 0, millisecond: 0 });
+      const windowClose = dayStart.set({ hour: slotMaxHour, minute: 0, second: 0, millisecond: 0 });
+      const clipStart = DateTime.max(segStart, windowOpen);
+      const clipEnd = DateTime.min(segEnd, windowClose);
+      if (clipEnd > clipStart) {
+        out.push({ start: clipStart.toISO()!, end: clipEnd.toISO()! });
+      }
+    }
+    segStart = nextMidnight;
+  }
+
+  return out;
 };
 
 const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
@@ -615,14 +650,20 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     handleTimeSelect,
   ]);
 
+  const fcTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
   const fullCalendarEvents: EventInput[] = useMemo(() => {
-    if (!schedulingSettings || loading) return [];
+    if (!schedulingSettings) return [];
 
     const endInclusive = new Date(busyFetchRange.end.getTime() - 1);
     if (endInclusive < busyFetchRange.start) return [];
 
     const daysInRange = eachDayOfInterval({ start: busyFetchRange.start, end: endInclusive });
     const now = new Date();
+
+    /** Matches `<FullCalendar slotMinTime` / `slotMaxTime` (09:00–18:00). */
+    const FC_SLOT_MIN_H = 9;
+    const FC_SLOT_MAX_H = 18;
 
     const busyEvents: EventInput[] = [];
     Object.entries(monthlyBusySchedule).forEach(([email, slots]) => {
@@ -631,16 +672,25 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
       const hex = display?.color.hex ?? '#64748b';
       const memberName = display?.name ?? email.split('@')[0] ?? email;
       slots.forEach((busy, i) => {
-        busyEvents.push({
-          id: `busy-${email}-${i}-${busy.start}`,
-          title: memberName,
-          start: busy.start,
-          end: busy.end,
-          backgroundColor: hex,
-          borderColor: darkenBorderHex(hex),
-          textColor: '#ffffff',
-          extendedProps: { kind: 'busy' as const },
-          classNames: ['fc-slot-busy'],
+        const segments = splitBusySlotsForCalendar(
+          busy.start,
+          busy.end,
+          fcTimezone,
+          FC_SLOT_MIN_H,
+          FC_SLOT_MAX_H
+        );
+        segments.forEach((seg, segIdx) => {
+          busyEvents.push({
+            id: `busy-${email}-${i}-${segIdx}-${seg.start}`,
+            title: memberName,
+            start: seg.start,
+            end: seg.end,
+            backgroundColor: hex,
+            borderColor: darkenBorderHex(hex),
+            textColor: '#ffffff',
+            extendedProps: { kind: 'busy' as const },
+            classNames: ['fc-slot-busy'],
+          });
         });
       });
     });
@@ -665,7 +715,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     return [...busyEvents, ...slotEvents];
   }, [
     schedulingSettings,
-    loading,
     busyFetchRange.start,
     busyFetchRange.end,
     monthlyBusySchedule,
@@ -674,6 +723,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     appState.requiredMembers,
     appState.optionalMembers,
     memberDisplayByEmail,
+    fcTimezone,
   ]);
 
   const fcTeamCompositionKey = useMemo(() => {
@@ -698,7 +748,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     handleTimeSelect(slot);
   }, [handleTimeSelect]);
 
-  const fcTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const slotMinutes = appState.duration || 60;
 
   const fcFormats = useMemo(() => {

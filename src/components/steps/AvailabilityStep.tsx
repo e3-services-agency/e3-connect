@@ -59,6 +59,10 @@ const MEMBER_COLORS: MemberColor[] = [
   { border: 'border-fuchsia-500/40', bg: 'bg-fuchsia-500/20', text: 'text-fuchsia-400', hex: '#e879f9' },
 ];
 
+/** Calendar grid step — must stay independent of meeting `duration` or bar heights and axis get out of sync. */
+const FC_GRID_SLOT_MINUTES = 30;
+const FC_SNAP_MINUTES = 15;
+
 const monthCalendarSpan = (month: Date) => {
   const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
   const end = endOfWeek(endOfMonth(month), { weekStartsOn: 1 });
@@ -835,8 +839,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     handleTimeSelect(slot);
   }, [handleTimeSelect]);
 
-  const slotMinutes = appState.duration || 60;
-
   const fcFormats = useMemo(() => {
     const is24 = appState.timeFormat === '24h';
     return {
@@ -863,7 +865,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
         const timeLabel = `${formatTimeSlot(startDt)} – ${formatTimeSlot(endDt)}`;
         return (
           <div
-            className={`fc-busy-inner flex min-h-0 flex-col gap-0.5 overflow-hidden px-0.5 py-0.5 text-[10px] leading-tight ${
+            className={`fc-busy-inner flex h-full min-h-full flex-col gap-0.5 overflow-hidden px-0.5 py-0.5 text-[10px] leading-tight ${
               isEmbed ? 'text-slate-900' : 'text-white'
             }`}
             style={isEmbed ? undefined : { textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}
@@ -882,9 +884,9 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
       const endDt = new Date(slot.end);
       const timeLabel = `${formatTimeSlot(startDt)} – ${formatTimeSlot(endDt)}`;
       return (
-        <div className="fc-custom-slot-inner flex min-h-0 w-full min-w-0 flex-col justify-center gap-1 px-1 py-0.5">
+        <div className="fc-custom-slot-inner flex h-full min-h-0 w-full min-w-0 flex-col justify-center gap-1 px-1 py-0.5">
           <div
-            className="fc-avail-time max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[9px] font-semibold leading-none text-white"
+            className="fc-avail-time max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[9px] font-semibold leading-none text-inherit"
             title={timeLabel}
           >
             {timeLabel}
@@ -1324,7 +1326,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
               </div>
             </div>
             <p className="text-e3-white/50 text-xs mt-2">
-              Colored columns are busy times. Shaded areas are outside business hours. Green blocks are bookable — click one to select.
+              Colored blocks are busy times. Shaded areas are outside business hours. Dashed outlines mark bookable slots — click one to select.
             </p>
           </div>
 
@@ -1394,7 +1396,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
               </div>
               <FullCalendar
                 ref={calendarRef}
-                key={`fc-${fcTimezone}-${slotMinutes}-${appState.timeFormat}-${fcTeamCompositionKey}`}
+                key={`fc-${fcTimezone}-${appState.timeFormat}-${fcTeamCompositionKey}`}
                 plugins={[luxon3Plugin, timeGridPlugin, interactionPlugin]}
                 initialView="timeGridWeek"
                 headerToolbar={false}
@@ -1409,9 +1411,9 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                 nowIndicator
                 slotMinTime="09:00:00"
                 slotMaxTime="18:00:00"
-                slotDuration={{ minutes: slotMinutes }}
-                snapDuration={{ minutes: slotMinutes }}
-                slotLabelInterval={slotMinutes >= 60 ? { hours: 1 } : { minutes: 30 }}
+                slotDuration={{ minutes: FC_GRID_SLOT_MINUTES }}
+                snapDuration={{ minutes: FC_SNAP_MINUTES }}
+                slotLabelInterval={{ minutes: 30 }}
                 slotLabelFormat={fcFormats.slotLabelFormat}
                 eventTimeFormat={fcFormats.eventTimeFormat}
                 dayHeaderFormat="EEE d/M"

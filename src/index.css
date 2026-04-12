@@ -214,7 +214,7 @@ All colors MUST be HSL.
   --fc-page-bg-color: transparent;
   --fc-neutral-bg-color: rgba(255, 255, 255, 0.06);
   --fc-list-event-hover-bg-color: rgba(255, 255, 255, 0.08);
-  --fc-today-bg-color: rgba(129, 140, 248, 0.14);
+  --fc-today-bg-color: rgba(13, 204, 150, 0.12);
   --fc-now-indicator-color: #5eead4;
   --fc-button-bg-color: rgba(255, 255, 255, 0.08);
   --fc-button-border-color: rgba(255, 255, 255, 0.22);
@@ -249,12 +249,6 @@ All colors MUST be HSL.
   opacity: 1 !important;
   border: none !important;
   pointer-events: none;
-  position: relative;
-  overflow: visible !important;
-}
-
-.availability-fc .fc-event.fc-non-business-bg.fc-bg-event .fc-nonbiz-label-wrap {
-  align-items: flex-start;
 }
 
 /* Current time — more visible on dark grid */
@@ -307,7 +301,7 @@ All colors MUST be HSL.
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-available-event .fc-event-main {
-  background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%) !important;
+  background: linear-gradient(180deg, #0dcc96 0%, #0a9f72 100%) !important;
   color: #ffffff !important;
   font-weight: 600;
   padding: 2px 4px;
@@ -323,20 +317,20 @@ All colors MUST be HSL.
   filter: brightness(1.08);
   transform: translateY(-1px);
   box-shadow:
-    0 4px 18px rgba(22, 163, 74, 0.55),
+    0 4px 18px rgba(13, 204, 150, 0.55),
     0 0 0 1px rgba(255, 255, 255, 0.3);
 }
 
-/* Selected slot — bookable green, distinct from member “Pale Green” */
+/* Selected slot */
 .availability-fc .fc-timegrid-event.fc-slot-selected-event .fc-event-main {
-  background: linear-gradient(180deg, #16a34a 0%, #15803d 100%) !important;
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.4);
+  background: linear-gradient(180deg, #0dcc96 0%, #078c6a 100%) !important;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-selected-event {
   box-shadow:
-    0 0 0 2px #4ade80,
-    0 4px 18px rgba(22, 163, 74, 0.55),
+    0 0 0 2px #0dcc96,
+    0 4px 18px rgba(13, 204, 150, 0.5),
     0 0 0 1px rgba(255, 255, 255, 0.28) !important;
   z-index: 12 !important;
 }
@@ -346,7 +340,7 @@ All colors MUST be HSL.
   --fc-border-color: rgba(15, 23, 42, 0.12);
   --fc-page-bg-color: #ffffff;
   --fc-neutral-bg-color: rgba(15, 23, 42, 0.04);
-  --fc-today-bg-color: rgba(129, 140, 248, 0.12);
+  --fc-today-bg-color: rgba(13, 204, 150, 0.1);
   --fc-button-bg-color: #f1f5f9;
   --fc-button-border-color: #e2e8f0;
   --fc-button-text-color: #0f172a;

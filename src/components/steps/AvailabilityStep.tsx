@@ -2,9 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { Calendar, Clock, ChevronLeft, ChevronRight, X, Trash2, GripHorizontal, Loader, List, LayoutGrid } from 'lucide-react';
 import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
 import FullCalendar from '@fullcalendar/react';
-import type { CalendarOptions, DatesSetArg, EventClickArg, EventContentArg, EventInput } from '@fullcalendar/core';
-
-type FcEventMountArg = Parameters<NonNullable<CalendarOptions['eventDidMount']>>[0];
+import type { DatesSetArg, EventClickArg, EventContentArg, EventInput } from '@fullcalendar/core';
 import luxon3Plugin from '@fullcalendar/luxon3';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
@@ -40,42 +38,25 @@ interface SchedulingWindowSettings {
 }
 
 interface MemberColor {
-  name: string;
+  border: string;
+  bg: string;
+  text: string;
   hex: string;
 }
 
-const hexToRgba = (hex: string, alpha: number): string => {
-  const n = hex.replace('#', '');
-  if (n.length !== 6) return `rgba(255,255,255,${alpha})`;
-  const r = parseInt(n.slice(0, 2), 16);
-  const g = parseInt(n.slice(2, 4), 16);
-  const b = parseInt(n.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${alpha})`;
-};
-
-/** Light text on dark chips; dark text on very light swatches (e.g. pale yellow). */
-const contrastChipText = (hex: string): string => {
-  const n = hex.replace('#', '');
-  if (n.length !== 6) return '#f8fafc';
-  const r = parseInt(n.slice(0, 2), 16);
-  const g = parseInt(n.slice(2, 4), 16);
-  const b = parseInt(n.slice(4, 6), 16);
-  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-  return yiq > 165 ? '#0f172a' : '#f8fafc';
-};
-
 const MEMBER_COLORS: MemberColor[] = [
-  { name: 'Light Blue', hex: '#a6cee3' },
-  { name: 'Deep Blue', hex: '#1f78b4' },
-  { name: 'Pale Green', hex: '#b2df8a' },
-  { name: 'Light Pink', hex: '#fb9a99' },
-  { name: 'Crimson Red', hex: '#e31a1c' },
-  { name: 'Peach', hex: '#fdbf6f' },
-  { name: 'Bright Orange', hex: '#ff7f00' },
-  { name: 'Lavender', hex: '#cab2d6' },
-  { name: 'Deep Purple', hex: '#6a3d9a' },
-  { name: 'Pale Yellow', hex: '#ffff99' },
-  { name: 'Rust Brown', hex: '#b15928' },
+  { border: 'border-blue-500/40', bg: 'bg-blue-500/20', text: 'text-blue-400', hex: '#60a5fa' },
+  { border: 'border-orange-500/40', bg: 'bg-orange-500/20', text: 'text-orange-400', hex: '#fb923c' },
+  { border: 'border-emerald-500/40', bg: 'bg-emerald-500/20', text: 'text-emerald-400', hex: '#34d399' },
+  { border: 'border-purple-500/40', bg: 'bg-purple-500/20', text: 'text-purple-400', hex: '#c084fc' },
+  { border: 'border-yellow-500/40', bg: 'bg-yellow-500/20', text: 'text-yellow-400', hex: '#facc15' },
+  { border: 'border-pink-500/40', bg: 'bg-pink-500/20', text: 'text-pink-400', hex: '#f472b6' },
+  { border: 'border-cyan-500/40', bg: 'bg-cyan-500/20', text: 'text-cyan-400', hex: '#22d3ee' },
+  { border: 'border-rose-500/40', bg: 'bg-rose-500/20', text: 'text-rose-400', hex: '#fb7185' },
+  { border: 'border-lime-500/40', bg: 'bg-lime-500/20', text: 'text-lime-400', hex: '#a3e635' },
+  { border: 'border-indigo-500/40', bg: 'bg-indigo-500/20', text: 'text-indigo-400', hex: '#818cf8' },
+  { border: 'border-teal-500/40', bg: 'bg-teal-500/20', text: 'text-teal-400', hex: '#2dd4bf' },
+  { border: 'border-fuchsia-500/40', bg: 'bg-fuchsia-500/20', text: 'text-fuchsia-400', hex: '#e879f9' },
 ];
 
 const monthCalendarSpan = (month: Date) => {
@@ -152,7 +133,6 @@ const buildNonBusinessBackgroundEvents = (
         end: end.toISO()!,
         classNames: ['fc-non-business-bg'],
         groupId: 'nonbiz',
-        extendedProps: { kind: 'nonbusiness' as const },
       });
     };
 
@@ -778,28 +758,25 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     });
 
     const slotEvents: EventInput[] = [];
-    if (!loading) {
-      daysInRange.forEach(day => {
-        if (day < now && !isSameDay(day, now)) return;
-        const slots = generateSlotsForDate(day);
-        slots.forEach((slot, idx) => {
-          const isSelected = appState.selectedTime === slot.start;
-          slotEvents.push({
-            id: `avail-${slot.start}-${idx}`,
-            title: '',
-            start: slot.start,
-            end: slot.end,
-            extendedProps: { slot, kind: 'available' as const },
-            classNames: isSelected ? ['fc-slot-selected-event'] : ['fc-slot-available-event'],
-          });
+    daysInRange.forEach(day => {
+      if (day < now && !isSameDay(day, now)) return;
+      const slots = generateSlotsForDate(day);
+      slots.forEach((slot, idx) => {
+        const isSelected = appState.selectedTime === slot.start;
+        slotEvents.push({
+          id: `avail-${slot.start}-${idx}`,
+          title: '',
+          start: slot.start,
+          end: slot.end,
+          extendedProps: { slot, kind: 'available' as const },
+          classNames: isSelected ? ['fc-slot-selected-event'] : ['fc-slot-available-event'],
         });
       });
-    }
+    });
 
     return [...nonBizEvents, ...busyEvents, ...slotEvents];
   }, [
     schedulingSettings,
-    loading,
     busyFetchRange.start,
     busyFetchRange.end,
     monthlyBusySchedule,
@@ -852,34 +829,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
       info.jsEvent.preventDefault();
       return;
     }
-    if (kind === 'nonbusiness') {
-      info.jsEvent.preventDefault();
-      return;
-    }
     const slot = info.event.extendedProps?.slot as TimeSlot | undefined;
     if (kind !== 'available' || !slot) return;
     info.jsEvent.preventDefault();
     handleTimeSelect(slot);
   }, [handleTimeSelect]);
-
-  const handleFcEventDidMount = useCallback(
-    (info: FcEventMountArg) => {
-      if (info.event.extendedProps?.kind !== 'nonbusiness') return;
-      if (info.el.querySelector('.fc-nonbiz-label-wrap')) return;
-      const wrap = document.createElement('div');
-      wrap.className =
-        'fc-nonbiz-label-wrap pointer-events-none absolute inset-0 z-[1] flex items-start justify-center px-1 pt-1';
-      const span = document.createElement('span');
-      span.className = `fc-nonbiz-label max-w-[min(100%,120px)] text-center text-[9px] font-semibold leading-tight ${
-        isEmbed ? 'text-slate-500' : 'text-e3-white/65'
-      }`;
-      span.textContent = 'No business hours';
-      wrap.appendChild(span);
-      (info.el as HTMLElement).style.position = 'relative';
-      info.el.appendChild(wrap);
-    },
-    [isEmbed]
-  );
 
   const slotMinutes = appState.duration || 60;
 
@@ -1062,12 +1016,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                       key={m.id}
                       draggable
                       onDragStart={(e) => handleDragStart(e, m.id, 'pool')}
-                      className="flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-medium cursor-grab border border-dashed active:cursor-grabbing hover:brightness-110 transition-all"
-                      style={{
-                        borderColor: m.color.hex,
-                        backgroundColor: hexToRgba(m.color.hex, 0.22),
-                        color: contrastChipText(m.color.hex),
-                      }}
+                      className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-medium border border-dashed border-e3-white/30 cursor-grab active:cursor-grabbing hover:bg-e3-white/10 transition-all ${m.color.text}`}
                     >
                       {m.google_photo_url ? (
                         <img 
@@ -1120,12 +1069,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                     key={m.id}
                     draggable
                     onDragStart={(e) => handleDragStart(e, m.id, 'required')}
-                    className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border border-solid cursor-grab active:cursor-grabbing hover:brightness-110 transition-all"
-                    style={{
-                      borderColor: m.color.hex,
-                      backgroundColor: hexToRgba(m.color.hex, 0.3),
-                      color: contrastChipText(m.color.hex),
-                    }}
+                    className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
                   >
                     {m.google_photo_url ? (
                       <img 
@@ -1174,12 +1118,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                     key={m.id}
                     draggable
                     onDragStart={(e) => handleDragStart(e, m.id, 'optional')}
-                    className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border border-solid cursor-grab active:cursor-grabbing hover:brightness-110 transition-all"
-                    style={{
-                      borderColor: m.color.hex,
-                      backgroundColor: hexToRgba(m.color.hex, 0.3),
-                      color: contrastChipText(m.color.hex),
-                    }}
+                    className={`flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-full text-[11px] font-medium border cursor-grab active:cursor-grabbing hover:brightness-110 transition-all ${m.color.bg} ${m.color.text} ${m.color.border}`}
                   >
                     {m.google_photo_url ? (
                       <img 
@@ -1464,7 +1403,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                 datesSet={handleFcDatesSet}
                 eventClick={handleFcEventClick}
                 eventContent={renderFcEventContent}
-                eventDidMount={handleFcEventDidMount}
                 selectable={false}
                 timeZone={fcTimezone}
                 firstDay={1}

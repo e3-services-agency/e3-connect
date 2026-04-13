@@ -71,6 +71,11 @@ const monthCalendarSpan = (month: Date) => {
   return { start, end };
 };
 
+const FC_PLUGINS = [luxon3Plugin, timeGridPlugin, interactionPlugin];
+const FC_SLOT_MIN_H = 9;
+const FC_SLOT_MAX_H = 18;
+const FC_GRID_TOTAL_MIN = (FC_SLOT_MAX_H - FC_SLOT_MIN_H) * 60;
+
 const WEEK_VIEW_SLOT_LIMIT = 5;
 
 /** Darker edge for busy blocks (Google-style border). */
@@ -180,7 +185,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
   );
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [availableSlots, setAvailableSlots] = useState<TimeSlot[]>([]);
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [availabilityView, setAvailabilityView] = useState<'list' | 'calendar'>('list');
   const [busyFetchRange, setBusyFetchRange] = useState(() => monthCalendarSpan(new Date()));
@@ -539,38 +543,66 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     ]
   );
 
+  /**
+   * Shared slot cache: generates slots once per unique ISO date, keyed in fcTimezone.
+   * All consumers (dailyAvailabilityMap, visibleSlotsByDay, availableSlots) read from
+   * this cache instead of calling generateSlotsForDate independently.
+   *
+   * Canonical key: ISO date string ("2026-04-14") in fcTimezone.
+   * - calendarDays (browser-local Date objects) → format(date, 'yyyy-MM-dd')
+   * - visibleZonedDays (Luxon DateTime in fcTimezone) → .toISODate()
+   * Both produce the same YYYY-MM-DD string for the same calendar day.
+   */
+  const slotCache = useMemo(() => {
+    const cache = new Map<string, TimeSlot[]>();
+    if (!schedulingSettings || loading) return cache;
+
+    const todayIso = DateTime.now().setZone(fcTimezone).toISODate();
+
+    calendarDays.forEach(date => {
+      const ymd = format(date, 'yyyy-MM-dd');
+      if (ymd < todayIso! && ymd !== todayIso) return;
+      if (!cache.has(ymd)) {
+        cache.set(ymd, generateSlotsForDate(ymd));
+      }
+    });
+
+    visibleZonedDays.forEach(dayStart => {
+      const isoDate = dayStart.toISODate();
+      if (!isoDate || cache.has(isoDate)) return;
+      if (isoDate < todayIso! && isoDate !== todayIso) return;
+      cache.set(isoDate, generateSlotsForDate(isoDate));
+    });
+
+    return cache;
+  }, [schedulingSettings, loading, calendarDays, generateSlotsForDate, visibleZonedDays, fcTimezone]);
+
   const dailyAvailabilityMap = useMemo(() => {
     const map = new Map<string, Set<string>>();
     if (selectedMemberEmails.required.length === 0 || !schedulingSettings) return map;
 
     calendarDays.forEach(date => {
-        if (isSameDay(date, new Date()) || date > new Date()) {
-            const slots = generateSlotsForDate(date);
-            const availableSet = new Set<string>();
-            
-            slots.forEach(slot => {
-                slot.attendees?.forEach(att => {
-                    if (att.available) availableSet.add(att.email);
-                });
-            });
-            
-            if (availableSet.size > 0) {
-                map.set(format(date, 'yyyy-MM-dd'), availableSet);
-            }
-        }
+      const ymd = format(date, 'yyyy-MM-dd');
+      const slots = slotCache.get(ymd);
+      if (!slots || slots.length === 0) return;
+      const availableSet = new Set<string>();
+      slots.forEach(slot => {
+        slot.attendees?.forEach(att => {
+          if (att.available) availableSet.add(att.email);
+        });
+      });
+      if (availableSet.size > 0) {
+        map.set(ymd, availableSet);
+      }
     });
     return map;
-  }, [calendarDays, generateSlotsForDate, selectedMemberEmails.required, schedulingSettings]);
+  }, [calendarDays, slotCache, selectedMemberEmails.required, schedulingSettings]);
 
-  useEffect(() => {
-    if (!selectedDate || !schedulingSettings) {
-      setAvailableSlots([]);
-      return;
-    }
-    if (loading) return;
-    const slots = generateSlotsForDate(selectedDate);
-    setAvailableSlots(slots);
-  }, [selectedDate, generateSlotsForDate, schedulingSettings, loading, monthlyBusySchedule]);
+  const availableSlots = useMemo(() => {
+    if (!selectedDate || !schedulingSettings || loading) return [];
+    const ymd = format(selectedDate, 'yyyy-MM-dd');
+    return slotCache.get(ymd) ?? [];
+  }, [selectedDate, schedulingSettings, loading, slotCache]);
 
   const handleDragStart = (e: React.DragEvent, memberId: string, from: 'required' | 'optional' | 'pool') => {
     setDraggedMember({ id: memberId, from });
@@ -695,20 +727,15 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     const map = new Map<string, TimeSlot[]>();
     if (!schedulingSettings || loading) return map;
 
-    const nowZ = DateTime.now().setZone(fcTimezone).startOf('day');
     visibleZonedDays.forEach(dayStart => {
-      if (dayStart < nowZ && !dayStart.hasSame(nowZ, 'day')) return;
       const isoDate = dayStart.toISODate();
       if (!isoDate) return;
-      map.set(isoDate, generateSlotsForDate(isoDate));
+      const slots = slotCache.get(isoDate);
+      if (slots) map.set(isoDate, slots);
     });
 
     return map;
-  }, [fcTimezone, generateSlotsForDate, loading, schedulingSettings, visibleZonedDays]);
-
-  const FC_SLOT_MIN_H = 9;
-  const FC_SLOT_MAX_H = 18;
-  const FC_GRID_TOTAL_MIN = (FC_SLOT_MAX_H - FC_SLOT_MIN_H) * 60;
+  }, [loading, schedulingSettings, visibleZonedDays, slotCache]);
 
   const computedFullCalendarEvents: EventInput[] = useMemo(() => {
     if (!schedulingSettings) return [];
@@ -1433,7 +1460,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                 <FullCalendar
                   ref={calendarRef}
                   key={`fc-${fcTimezone}-${appState.timeFormat}-${fcTeamCompositionKey}`}
-                  plugins={[luxon3Plugin, timeGridPlugin, interactionPlugin]}
+                  plugins={FC_PLUGINS}
                   initialView="timeGridWeek"
                   headerToolbar={false}
                   locale={enGbLocale}

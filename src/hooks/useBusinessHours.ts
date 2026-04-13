@@ -1,5 +1,5 @@
 // useBusinessHours.ts
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../integrations/supabase/client';
 
 interface BusinessHours {
@@ -130,7 +130,7 @@ export const useBusinessHours = (clientTeamId?: string, teamMemberId?: string) =
     timezone: 'UTC'
   });
 
-  const getWorkingHoursForDate = (date: Date): WorkingHours => {
+  const getWorkingHoursForDate = useCallback((date: Date): WorkingHours => {
     if (!businessHours) return { start: '09:00', end: '18:00' };
 
     const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -139,12 +139,12 @@ export const useBusinessHours = (clientTeamId?: string, teamMemberId?: string) =
     if (dayKey === 'timezone') return { start: '09:00', end: '18:00' };
 
     return businessHours[dayKey] as WorkingHours;
-  };
+  }, [businessHours]);
 
-  const isWorkingDay = (date: Date): boolean => {
+  const isWorkingDay = useCallback((date: Date): boolean => {
     const hours = getWorkingHoursForDate(date);
     return !!(hours.start && hours.end);
-  };
+  }, [getWorkingHoursForDate]);
 
   return {
     businessHours,

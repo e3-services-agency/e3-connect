@@ -753,6 +753,10 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
             extendedProps: { kind: 'busy' as const },
             classNames: ['fc-slot-busy'],
           });
+          if ((window as any).__AUDIT_BUSY__) {
+            console.table({ rawStart: busy.start, rawEnd: busy.end, segStart: seg.start, segEnd: seg.end, email, fcTimezone });
+            console.log('EventInput:', JSON.stringify(busyEvents[busyEvents.length - 1]));
+          }
         });
       });
     });
@@ -873,17 +877,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
 
         const startDt = start instanceof Date ? start : new Date(start);
         const endDt = end instanceof Date ? end : new Date(end);
-
-        const formatFcTime = (time: Date) => {
-          return time.toLocaleTimeString('en-US', {
-            hour: appState.timeFormat === '24h' ? '2-digit' : 'numeric',
-            minute: '2-digit',
-            hour12: appState.timeFormat !== '24h',
-            timeZone: 'UTC',
-          });
-        };
-
-        const timeLabel = `${formatFcTime(startDt)} – ${formatFcTime(endDt)}`;
+        const timeLabel = `${formatTimeSlot(startDt)} – ${formatTimeSlot(endDt)}`;
 
         return (
           <div
@@ -1407,7 +1401,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
               </div>
               <FullCalendar
                 ref={calendarRef}
-                slotEventOverlap={false}
                 key={`fc-${fcTimezone}-${appState.timeFormat}-${fcTeamCompositionKey}`}
                 plugins={[luxon3Plugin, timeGridPlugin, interactionPlugin]}
                 initialView="timeGridWeek"

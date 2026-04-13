@@ -543,6 +543,15 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     ]
   );
 
+  // ── fcTimezone + visibleZonedDays must be declared before slotCache ──
+
+  const fcTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  const visibleZonedDays = useMemo(
+    () => enumerateZonedDaysInView(busyFetchRange.start, busyFetchRange.end, fcTimezone),
+    [busyFetchRange.start, busyFetchRange.end, fcTimezone]
+  );
+
   /**
    * Shared slot cache: generates slots once per unique ISO date, keyed in fcTimezone.
    * All consumers (dailyAvailabilityMap, visibleSlotsByDay, availableSlots) read from
@@ -603,6 +612,20 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     const ymd = format(selectedDate, 'yyyy-MM-dd');
     return slotCache.get(ymd) ?? [];
   }, [selectedDate, schedulingSettings, loading, slotCache]);
+
+  const visibleSlotsByDay = useMemo(() => {
+    const map = new Map<string, TimeSlot[]>();
+    if (!schedulingSettings || loading) return map;
+
+    visibleZonedDays.forEach(dayStart => {
+      const isoDate = dayStart.toISODate();
+      if (!isoDate) return;
+      const slots = slotCache.get(isoDate);
+      if (slots) map.set(isoDate, slots);
+    });
+
+    return map;
+  }, [loading, schedulingSettings, visibleZonedDays, slotCache]);
 
   const handleDragStart = (e: React.DragEvent, memberId: string, from: 'required' | 'optional' | 'pool') => {
     setDraggedMember({ id: memberId, from });
@@ -713,29 +736,9 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     handleTimeSelect,
   ]);
 
-  const fcTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const calendarRef = useRef<InstanceType<typeof FullCalendar>>(null);
   const [fcToolbarTitle, setFcToolbarTitle] = useState('');
   const [fcActiveView, setFcActiveView] = useState<'timeGridDay' | 'timeGridWeek'>('timeGridWeek');
-
-  const visibleZonedDays = useMemo(
-    () => enumerateZonedDaysInView(busyFetchRange.start, busyFetchRange.end, fcTimezone),
-    [busyFetchRange.start, busyFetchRange.end, fcTimezone]
-  );
-
-  const visibleSlotsByDay = useMemo(() => {
-    const map = new Map<string, TimeSlot[]>();
-    if (!schedulingSettings || loading) return map;
-
-    visibleZonedDays.forEach(dayStart => {
-      const isoDate = dayStart.toISODate();
-      if (!isoDate) return;
-      const slots = slotCache.get(isoDate);
-      if (slots) map.set(isoDate, slots);
-    });
-
-    return map;
-  }, [loading, schedulingSettings, visibleZonedDays, slotCache]);
 
   const computedFullCalendarEvents: EventInput[] = useMemo(() => {
     if (!schedulingSettings) return [];

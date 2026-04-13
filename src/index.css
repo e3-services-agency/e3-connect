@@ -239,25 +239,25 @@ All colors MUST be HSL.
   font-variant-numeric: tabular-nums;
 }
 
-/* Major vs Minor Grid Lines — full hours read as structure; half-hours stay quiet */
+/* Major vs Minor Grid Lines — full hours read as strong structure; half-hours stay quiet */
 .availability-fc .fc .fc-timegrid-slot-major {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.28) !important;
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.35) !important;
 }
 
 .availability-fc .fc .fc-timegrid-slot-major .fc-timegrid-slot-label-cushion {
   font-weight: 600;
-  font-size: 1em;
+  font-size: 0.82em;
   opacity: 1;
 }
 
 .availability-fc .fc .fc-timegrid-slot-minor {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
 }
 
 .availability-fc .fc .fc-timegrid-slot-minor .fc-timegrid-slot-label-cushion {
-  font-size: 0.68em;
+  font-size: 0.62em;
   font-weight: 400;
-  opacity: 0.48;
+  opacity: 0.35;
 }
 
 /* Out of Business Hours — visible but below busy/availability events */
@@ -290,31 +290,30 @@ All colors MUST be HSL.
   filter: drop-shadow(0 0 4px rgba(94, 234, 212, 0.8));
 }
 
-/* Busy — member color only; avoid heavy opacity stacking so the same person reads consistent */
+/* Busy — member color; harness geometry must be 1:1 with FC-computed top/bottom */
 .availability-fc .fc-timegrid-event.fc-slot-busy {
-  opacity: 0.82 !important;
+  opacity: 0.85 !important;
   pointer-events: none !important;
   border-radius: 6px !important;
   border-width: 1px !important;
   border-style: solid !important;
   overflow: hidden;
   z-index: 2 !important;
-  position: relative;
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-busy .fc-event-main {
-  border-radius: 6px;
   height: 100% !important;
-  min-height: 100% !important;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-busy .fc-busy-inner {
-  flex: 1 1 auto;
-  min-height: 100%;
+  flex: 1 1 0%;
+  min-height: 0;
   width: 100%;
+  overflow: hidden;
 }
 
 /* Slot overlay markers are rendered outside FullCalendar — no FC event styles needed */
@@ -347,11 +346,12 @@ All colors MUST be HSL.
 }
 
 .availability-fc--embed .fc .fc-timegrid-slot-major {
-  border-bottom-color: rgba(15, 23, 42, 0.22) !important;
+  border-bottom-width: 1.5px !important;
+  border-bottom-color: rgba(15, 23, 42, 0.28) !important;
 }
 
 .availability-fc--embed .fc .fc-timegrid-slot-minor {
-  border-bottom-color: rgba(15, 23, 42, 0.06) !important;
+  border-bottom-color: rgba(15, 23, 42, 0.05) !important;
 }
 
 .availability-fc--embed .fc-event.fc-non-business-bg.fc-bg-event {
@@ -378,7 +378,7 @@ All colors MUST be HSL.
 }
 
 .availability-fc--embed .fc-timegrid-event.fc-slot-busy {
-  opacity: 0.82 !important;
+  opacity: 0.85 !important;
   pointer-events: none !important;
 }
 

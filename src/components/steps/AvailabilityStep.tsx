@@ -1467,57 +1467,60 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                     className="pointer-events-none absolute left-0 right-0"
                     style={{ top: gridLayout.top, height: gridLayout.height }}
                   >
-                    {overlaySlots.map(({ slot, top, height, left, width, isSelected }) => (
-                      <div
-                        key={slot.start}
-                        className={`pointer-events-auto absolute box-border cursor-pointer rounded-md ${
-                          isSelected
-                            ? 'slot-overlay-selected'
-                            : 'slot-overlay-available'
-                        }`}
-                        style={{
-                          top,
-                          left,
-                          width,
-                          height,
-                          zIndex: isSelected ? 5 : 3,
-                          padding: 1,
-                        }}
-                        onClick={() => handleTimeSelect(slot)}
-                      >
+                    {overlaySlots.map(({ slot, top, height, left, width, isSelected }) => {
+                      const dots = slot.attendees
+                        ?.filter((a): a is SlotAttendee => a.available)
+                        .slice(0, 4);
+                      const startLabel = formatTimeSlot(new Date(slot.start));
+                      const endLabel = formatTimeSlot(new Date(slot.end));
+
+                      return (
                         <div
-                          className={`flex h-full w-full flex-col items-center justify-center gap-0.5 overflow-hidden rounded-[5px] border border-dashed px-1 py-0.5 transition-colors duration-150 ${
-                            isSelected
-                              ? isEmbed
-                                ? 'border-emerald-400 bg-emerald-50/60'
-                                : 'border-white/70 bg-white/10'
-                              : isEmbed
-                                ? 'border-slate-300 bg-transparent hover:border-slate-400 hover:bg-slate-50/60'
-                                : 'border-white/25 bg-transparent hover:border-white/50 hover:bg-white/[0.06]'
-                          }`}
+                          key={slot.start}
+                          className="pointer-events-auto absolute box-border cursor-pointer"
+                          style={{
+                            top,
+                            left,
+                            width,
+                            height,
+                            zIndex: isSelected ? 5 : 3,
+                            padding: 1,
+                          }}
+                          onClick={() => handleTimeSelect(slot)}
                         >
-                          <span
-                            className={`truncate text-center text-[9px] font-medium leading-none ${
-                              isEmbed ? 'text-slate-600' : 'text-white/80'
+                          <div
+                            className={`flex h-full w-full items-center justify-center overflow-hidden rounded-[5px] border-[1.5px] border-dashed px-1 transition-colors duration-150 ${
+                              isSelected
+                                ? isEmbed
+                                  ? 'border-emerald-500 bg-emerald-50/70'
+                                  : 'border-white/80 bg-white/10'
+                                : isEmbed
+                                  ? 'border-slate-400/70 bg-transparent hover:border-slate-500 hover:bg-slate-50/60'
+                                  : 'border-white/40 bg-transparent hover:border-white/65 hover:bg-white/[0.07]'
                             }`}
                           >
-                            {formatTimeSlot(new Date(slot.start))}
-                          </span>
-                          <span className="flex justify-center gap-0.5 overflow-hidden">
-                            {slot.attendees
-                              ?.filter((a): a is SlotAttendee => a.available)
-                              .slice(0, 4)
-                              .map(attendee => (
-                                <span
-                                  key={attendee.email}
-                                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                                  style={{ backgroundColor: attendee.color?.hex }}
-                                />
-                              ))}
-                          </span>
+                            <span
+                              className={`flex items-center gap-1 truncate text-[9px] font-medium leading-none ${
+                                isEmbed ? 'text-slate-600' : 'text-white/85'
+                              }`}
+                            >
+                              <span className="truncate">{startLabel}–{endLabel}</span>
+                              {dots && dots.length > 0 && (
+                                <span className="flex shrink-0 gap-0.5">
+                                  {dots.map(attendee => (
+                                    <span
+                                      key={attendee.email}
+                                      className="inline-block h-1.5 w-1.5 rounded-full"
+                                      style={{ backgroundColor: attendee.color?.hex }}
+                                    />
+                                  ))}
+                                </span>
+                              )}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

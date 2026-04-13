@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Calendar, Clock, ChevronLeft, ChevronRight, X, Trash2, GripHorizontal, Loader, List, LayoutGrid } from 'lucide-react';
 import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
+import {
+  enumerateZonedDaysInView,
+  splitBusySlotsForCalendar,
+  workingHoursForZonedWeekday,
+  zonedRangeToIso,
+} from '../../utils/calendarAvailabilityTimes';
 import FullCalendar from '@fullcalendar/react';
 import type { DatesSetArg, EventClickArg, EventContentArg, EventInput } from '@fullcalendar/core';
 import luxon3Plugin from '@fullcalendar/luxon3';
@@ -13,7 +19,7 @@ import { supabase } from '../../integrations/supabase/client';
 import { StepProps, TimeSlot } from '../../types/scheduling';
 import type { ClientTeam, TeamMemberConfig } from '../../types/team';
 import { TimezoneSelector } from '../TimezoneSelector';
-import { useBusinessHours } from '../../hooks/useBusinessHours';
+import { useBusinessHours, type DayBusinessHours } from '../../hooks/useBusinessHours';
 import EmbedHostPanel, { type EmbedHostEntity } from '../embed/EmbedHostPanel';
 import enGbLocale from '@fullcalendar/core/locales/en-gb';
 
@@ -75,62 +81,29 @@ const darkenBorderHex = (hex: string, factor = 0.62): string => {
   return `rgb(${r},${g},${b})`;
 };
 
-/** Split multi-day / overnight busy into per-day segments, then clip to calendar grid window (matches FullCalendar slotMin/slotMax). */
-const splitBusySlotsForCalendar = (
-  startIso: string,
-  endIso: string,
-  zone: string,
-  slotMinHour: number,
-  slotMaxHour: number
-): { start: string; end: string }[] => {
-  const start = DateTime.fromISO(startIso).setZone(zone);
-  const end = DateTime.fromISO(endIso).setZone(zone);
-  if (!start.isValid || !end.isValid || end <= start) return [];
-
-  const out: { start: string; end: string }[] = [];
-  let segStart = start;
-
-  while (segStart < end) {
-    const nextMidnight = segStart.startOf('day').plus({ days: 1 });
-    const segEnd = DateTime.min(end, nextMidnight);
-    if (segEnd > segStart) {
-      const dayStart = segStart.startOf('day');
-      const windowOpen = dayStart.set({ hour: slotMinHour, minute: 0, second: 0, millisecond: 0 });
-      const windowClose = dayStart.set({ hour: slotMaxHour, minute: 0, second: 0, millisecond: 0 });
-      const clipStart = DateTime.max(segStart, windowOpen);
-      const clipEnd = DateTime.min(segEnd, windowClose);
-      if (clipEnd > clipStart) {
-        out.push({ start: clipStart.toISO()!, end: clipEnd.toISO()! });
-      }
-    }
-    segStart = nextMidnight;
-  }
-
-  return out;
-};
-
-/** Build background segments for times outside configured business hours (within calendar grid 09–18). */
+/** Background segments outside configured business hours (grid 09–18), using the same zoned weekday as busy/slots. */
 const buildNonBusinessBackgroundEvents = (
-  daysInRange: Date[],
+  daysZoned: DateTime[],
   fcTimezone: string,
   gridStartHour: number,
   gridEndHour: number,
-  getWorkingHoursForDate: (d: Date) => { start: string | null; end: string | null }
+  businessHours: DayBusinessHours | null,
+  getWorkingHoursFallback: (d: Date) => { start: string | null; end: string | null }
 ): EventInput[] => {
   const out: EventInput[] = [];
-  daysInRange.forEach(day => {
-    const d0 = DateTime.fromJSDate(day).setZone(fcTimezone).startOf('day');
+  daysZoned.forEach(d0 => {
     const gridOpen = d0.set({ hour: gridStartHour, minute: 0, second: 0, millisecond: 0 });
     const gridClose = d0.set({ hour: gridEndHour, minute: 0, second: 0, millisecond: 0 });
-    const work = getWorkingHoursForDate(day);
+    const work = workingHoursForZonedWeekday(d0, businessHours, getWorkingHoursFallback);
 
     const pushBg = (start: DateTime, end: DateTime, seg: number) => {
       if (end <= start) return;
+      const range = zonedRangeToIso(start, end);
       out.push({
         id: `nonbiz-${d0.toISODate()}-${seg}-${start.toMillis()}`,
         display: 'background',
-        start: start.toISO()!,
-        end: end.toISO()!,
+        start: range.start,
+        end: range.end,
         classNames: ['fc-non-business-bg'],
         groupId: 'nonbiz',
       });
@@ -458,105 +431,111 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps -- busyRange* + availabilityEmailsKey mirror range & member list
   }, [busyRangeStartMs, busyRangeEndMs, availabilityEmailsKey]);
 
-  const generateSlotsForDate = useCallback((date: Date): TimeSlot[] => {
-    if (!schedulingSettings) return [];
+  const generateSlotsForDate = useCallback(
+    (date: Date | string): TimeSlot[] => {
+      if (!schedulingSettings) return [];
 
-    const duration = appState.duration || 60;
-    const slots: TimeSlot[] = [];
-    
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const workingHours = getWorkingHoursForDate(startOfDay);
-    
-    if (!workingHours.start || !workingHours.end) return [];
-    
-    const [startHour, startMinute] = workingHours.start.split(':').map(Number);
-    const [endHour, endMinute] = workingHours.end.split(':').map(Number);
-    
-    const now = new Date();
-    const minDateTime = new Date(now.getTime() + schedulingSettings.min_notice_hours * 60 * 60 * 1000);
-    
-    const workingStart = new Date(startOfDay);
-    workingStart.setHours(startHour, startMinute, 0, 0);
-    
-    const workingEnd = new Date(startOfDay);
-    workingEnd.setHours(endHour, endMinute, 0, 0);
-    
-    let effectiveStart = new Date(workingStart);
-    
-    if (startOfDay.toDateString() === now.toDateString() && effectiveStart < minDateTime) {
-      effectiveStart = new Date(minDateTime);
-      const minutes = effectiveStart.getMinutes();
-      const remainder = minutes % 15;
-      if (remainder !== 0) {
-        effectiveStart.setMinutes(minutes + (15 - remainder));
-      }
-      effectiveStart.setSeconds(0);
-      effectiveStart.setMilliseconds(0);
-    }
-    
-    let currentTime = new Date(effectiveStart);
-    
-    while (currentTime < workingEnd) {
-      const slotEnd = new Date(currentTime.getTime() + duration * 60000);
-      if (slotEnd > workingEnd) break;
+      const zone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const ymd = typeof date === 'string' ? date : format(date, 'yyyy-MM-dd');
+      const dayStart = DateTime.fromISO(ymd, { zone }).startOf('day');
+      if (!dayStart.isValid) return [];
 
-      const requiredMembersAvailable: string[] = [];
-      let allRequiredAvailable = true;
-      
-      for (const email of selectedMemberEmails.required) {
-        const memberBusySlots = monthlyBusySchedule[email] || [];
-        const hasConflict = memberBusySlots.some(busySlot => {
-          const busyStart = new Date(busySlot.start);
-          const busyEnd = new Date(busySlot.end);
-          return currentTime < busyEnd && slotEnd > busyStart;
-        });
-        
-        if (!hasConflict) {
-          requiredMembersAvailable.push(email);
+      const duration = appState.duration || 60;
+      const slots: TimeSlot[] = [];
+
+      const workingHours = workingHoursForZonedWeekday(dayStart, businessHours, getWorkingHoursForDate);
+      if (!workingHours.start || !workingHours.end) return [];
+
+      const [startHour, startMinute] = workingHours.start.split(':').map(Number);
+      const [endHour, endMinute] = workingHours.end.split(':').map(Number);
+
+      const workingStart = dayStart.set({ hour: startHour, minute: startMinute || 0, second: 0, millisecond: 0 });
+      const workingEnd = dayStart.set({ hour: endHour, minute: endMinute || 0, second: 0, millisecond: 0 });
+
+      const nowZ = DateTime.now().setZone(zone);
+      const minDateTime = nowZ.plus({ hours: schedulingSettings.min_notice_hours });
+
+      let currentTime = workingStart;
+      if (dayStart.hasSame(nowZ, 'day') && currentTime < minDateTime) {
+        currentTime = minDateTime;
+        const m = currentTime.minute;
+        const rem = m % 15;
+        if (rem !== 0) {
+          currentTime = currentTime.set({ minute: m + (15 - rem), second: 0, millisecond: 0 });
         } else {
-          allRequiredAvailable = false;
+          currentTime = currentTime.set({ second: 0, millisecond: 0 });
         }
       }
-      
-      if (allRequiredAvailable) {
-        const optionalMembersAvailable: string[] = [];
-        for (const member of selectedMembers.optional) {
-          const memberBusySlots = monthlyBusySchedule[member.email] || [];
+
+      while (currentTime < workingEnd) {
+        const slotEnd = currentTime.plus({ minutes: duration });
+        if (slotEnd > workingEnd) break;
+
+        let allRequiredAvailable = true;
+        for (const email of selectedMemberEmails.required) {
+          const memberBusySlots = monthlyBusySchedule[email] || [];
           const hasConflict = memberBusySlots.some(busySlot => {
-            const busyStart = new Date(busySlot.start);
-            const busyEnd = new Date(busySlot.end);
+            const busyStart = DateTime.fromISO(busySlot.start).setZone(zone);
+            const busyEnd = DateTime.fromISO(busySlot.end).setZone(zone);
             return currentTime < busyEnd && slotEnd > busyStart;
           });
-          if (!hasConflict) optionalMembersAvailable.push(member.email);
+          if (hasConflict) {
+            allRequiredAvailable = false;
+            break;
+          }
         }
-        
-        slots.push({
-          start: currentTime.toISOString(),
-          end: slotEnd.toISOString(),
-          attendees: [
-            ...selectedMembers.required.map(m => ({ 
-              name: m.name, email: m.email, type: 'required' as const, available: true, color: m.color 
-            })),
-            ...selectedMembers.optional.map(m => ({ 
-              name: m.name, email: m.email, type: 'optional' as const, available: optionalMembersAvailable.includes(m.email), color: m.color 
-            }))
-          ]
-        });
+
+        if (allRequiredAvailable) {
+          const optionalMembersAvailable: string[] = [];
+          for (const member of selectedMembers.optional) {
+            const memberBusySlots = monthlyBusySchedule[member.email] || [];
+            const hasConflict = memberBusySlots.some(busySlot => {
+              const busyStart = DateTime.fromISO(busySlot.start).setZone(zone);
+              const busyEnd = DateTime.fromISO(busySlot.end).setZone(zone);
+              return currentTime < busyEnd && slotEnd > busyStart;
+            });
+            if (!hasConflict) optionalMembersAvailable.push(member.email);
+          }
+
+          const range = zonedRangeToIso(currentTime, slotEnd);
+          slots.push({
+            start: range.start,
+            end: range.end,
+            attendees: [
+              ...selectedMembers.required.map(m => ({
+                name: m.name,
+                email: m.email,
+                type: 'required' as const,
+                available: true,
+                color: m.color,
+              })),
+              ...selectedMembers.optional.map(m => ({
+                name: m.name,
+                email: m.email,
+                type: 'optional' as const,
+                available: optionalMembersAvailable.includes(m.email),
+                color: m.color,
+              })),
+            ],
+          });
+        }
+        currentTime = currentTime.plus({ minutes: duration });
       }
-      currentTime = new Date(currentTime.getTime() + duration * 60000);
-    }
-    return slots;
-  }, [
-    schedulingSettings,
-    appState.duration,
-    appState.requiredMembers,
-    appState.optionalMembers,
-    selectedMemberEmails.required,
-    monthlyBusySchedule,
-    getWorkingHoursForDate,
-    selectedMembers,
-  ]);
+      return slots;
+    },
+    [
+      schedulingSettings,
+      appState.duration,
+      appState.requiredMembers,
+      appState.optionalMembers,
+      appState.timezone,
+      selectedMemberEmails.required,
+      monthlyBusySchedule,
+      getWorkingHoursForDate,
+      businessHours,
+      selectedMembers,
+    ]
+  );
 
   const dailyAvailabilityMap = useMemo(() => {
     const map = new Map<string, Set<string>>();
@@ -709,59 +688,63 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
   const fullCalendarEvents: EventInput[] = useMemo(() => {
     if (!schedulingSettings) return [];
 
-    const endInclusive = new Date(busyFetchRange.end.getTime() - 1);
-    if (endInclusive < busyFetchRange.start) return [];
-
-    const daysInRange = eachDayOfInterval({ start: busyFetchRange.start, end: endInclusive });
-    const now = new Date();
+    if (busyFetchRange.end.getTime() <= busyFetchRange.start.getTime()) return [];
 
     /** Matches `<FullCalendar slotMinTime` / `slotMaxTime` (09:00–18:00). */
     const FC_SLOT_MIN_H = 9;
     const FC_SLOT_MAX_H = 18;
 
+    const zonedDays = enumerateZonedDaysInView(busyFetchRange.start, busyFetchRange.end, fcTimezone);
+    const nowZ = DateTime.now().setZone(fcTimezone);
+
     const nonBizEvents = buildNonBusinessBackgroundEvents(
-      daysInRange,
+      zonedDays,
       fcTimezone,
       FC_SLOT_MIN_H,
       FC_SLOT_MAX_H,
+      businessHours,
       getWorkingHoursForDate
     );
 
     const busyEvents: EventInput[] = [];
-    Object.entries(monthlyBusySchedule).forEach(([email, slots]) => {
-      const key = email.toLowerCase().trim();
-      const display = memberDisplayByEmail.get(key);
-      const hex = display?.color.hex ?? '#64748b';
-      const memberName = display?.name ?? email.split('@')[0] ?? email;
-      slots.forEach((busy, i) => {
-        const segments = splitBusySlotsForCalendar(
-          busy.start,
-          busy.end,
-          fcTimezone,
-          FC_SLOT_MIN_H,
-          FC_SLOT_MAX_H
-        );
-        segments.forEach((seg, segIdx) => {
-          busyEvents.push({
-            id: `busy-${email}-${i}-${segIdx}-${seg.start}`,
-            title: memberName,
-            start: seg.start,
-            end: seg.end,
-            backgroundColor: hex,
-            borderColor: darkenBorderHex(hex),
-            textColor: '#ffffff',
-            extendedProps: { kind: 'busy' as const },
-            classNames: ['fc-slot-busy'],
+    if (!loading) {
+      Object.entries(monthlyBusySchedule).forEach(([email, slots]) => {
+        const key = email.toLowerCase().trim();
+        const display = memberDisplayByEmail.get(key);
+        const hex = display?.color.hex ?? '#64748b';
+        const memberName = display?.name ?? email.split('@')[0] ?? email;
+        slots.forEach((busy, i) => {
+          const segments = splitBusySlotsForCalendar(
+            busy.start,
+            busy.end,
+            fcTimezone,
+            FC_SLOT_MIN_H,
+            FC_SLOT_MAX_H
+          );
+          segments.forEach((seg, segIdx) => {
+            busyEvents.push({
+              id: `busy-${email}-${i}-${segIdx}-${seg.start}`,
+              title: memberName,
+              start: seg.start,
+              end: seg.end,
+              backgroundColor: hex,
+              borderColor: darkenBorderHex(hex),
+              textColor: '#ffffff',
+              extendedProps: { kind: 'busy' as const },
+              classNames: ['fc-slot-busy'],
+            });
           });
         });
       });
-    });
+    }
 
     const slotEvents: EventInput[] = [];
     if (!loading) {
-      daysInRange.forEach(day => {
-        if (day < now && !isSameDay(day, now)) return;
-        const slots = generateSlotsForDate(day);
+      zonedDays.forEach(dayStart => {
+        if (dayStart < nowZ.startOf('day') && !dayStart.hasSame(nowZ, 'day')) return;
+        const isoDate = dayStart.toISODate();
+        if (!isoDate) return;
+        const slots = generateSlotsForDate(isoDate);
         slots.forEach((slot, idx) => {
           const isSelected = appState.selectedTime === slot.start;
           slotEvents.push({
@@ -877,35 +860,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
         );
       }
 
-      const slot = arg.event.extendedProps?.slot as TimeSlot | undefined;
-      if (kind !== 'available' || !slot) {
+      if (kind !== 'available') {
         return null;
       }
-      const startDt = new Date(slot.start);
-      const endDt = new Date(slot.end);
-      const timeLabel = `${formatTimeSlot(startDt)} – ${formatTimeSlot(endDt)}`;
-      return (
-        <div className="fc-custom-slot-inner flex h-full min-h-0 w-full min-w-0 flex-col justify-center gap-1 px-1 py-0.5">
-          <div
-            className="fc-avail-time max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-center text-[9px] font-semibold leading-none text-inherit"
-            title={timeLabel}
-          >
-            {timeLabel}
-          </div>
-          <div className="flex shrink-0 flex-nowrap justify-center gap-0.5 overflow-hidden">
-            {slot.attendees
-              ?.filter((a): a is SlotAttendee => a.available)
-              .map((attendee) => (
-                <span
-                  key={attendee.email}
-                  title={attendee.name}
-                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full ring-1 ring-white/50"
-                  style={{ backgroundColor: attendee.color?.hex }}
-                />
-              ))}
-          </div>
-        </div>
-      );
+      /* Minimal affordance only — slot times live on the axis / list view; keeps dense days readable. */
+      return <div className="fc-free-slot-marker h-full min-h-[6px] w-full shrink-0" aria-hidden />;
     },
     [formatTimeSlot, isEmbed]
   );
@@ -1332,14 +1291,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
           </div>
 
           <div className="relative bg-e3-space-blue/50 rounded-lg border border-e3-white/10 p-2 overflow-hidden min-h-[320px] sm:min-h-[400px]">
-            {loading && (
-              <div className="pointer-events-none absolute right-2 top-2 z-[6] flex items-center gap-1.5 rounded-md border border-e3-white/10 bg-e3-space-blue/90 px-2 py-1 shadow-sm backdrop-blur-sm">
-                <Loader className="h-3.5 w-3.5 shrink-0 animate-spin text-e3-azure" />
-                <span className="text-[10px] text-e3-white/75">Updating calendars…</span>
-              </div>
-            )}
             <div
-              className={`availability-fc -mx-1 overflow-x-auto px-1 pb-1 ${isEmbed ? 'availability-fc--embed' : ''}`}
+              className={`availability-fc -mx-1 overflow-x-auto px-1 pb-1 transition-opacity duration-150 ${isEmbed ? 'availability-fc--embed' : ''} ${loading ? 'pointer-events-none opacity-40' : ''}`}
             >
               <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center justify-center gap-1 sm:justify-start">
@@ -1425,6 +1378,16 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                 displayEventTime={false}
               />
             </div>
+            {loading && (
+              <div
+                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 rounded-lg bg-e3-space-blue/88 backdrop-blur-sm"
+                aria-busy="true"
+                aria-live="polite"
+              >
+                <Loader className="h-8 w-8 shrink-0 animate-spin text-e3-azure" />
+                <span className="text-xs text-e3-white/80">Loading availability…</span>
+              </div>
+            )}
           </div>
 
           <div className="bg-e3-space-blue/50 rounded-lg p-4 border border-e3-white/10">

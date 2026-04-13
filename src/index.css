@@ -239,32 +239,40 @@ All colors MUST be HSL.
   font-variant-numeric: tabular-nums;
 }
 
-/* Major vs Minor Grid Lines */
+/* Major vs Minor Grid Lines — full hours read as structure; half-hours stay quiet */
 .availability-fc .fc .fc-timegrid-slot-major {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.28) !important;
+}
+
+.availability-fc .fc .fc-timegrid-slot-major .fc-timegrid-slot-label-cushion {
+  font-weight: 600;
+  font-size: 1em;
+  opacity: 1;
 }
 
 .availability-fc .fc .fc-timegrid-slot-minor {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
 }
 
 .availability-fc .fc .fc-timegrid-slot-minor .fc-timegrid-slot-label-cushion {
-  font-size: 0.7em;
-  opacity: 0.5;
+  font-size: 0.68em;
+  font-weight: 400;
+  opacity: 0.48;
 }
 
-/* Out of Business Hours */
+/* Out of Business Hours — visible but below busy/availability events */
 .availability-fc .fc-event.fc-non-business-bg.fc-bg-event {
   background: repeating-linear-gradient(
     45deg,
-    rgba(0, 0, 0, 0.4),
+    rgba(0, 0, 0, 0.28),
+    rgba(0, 0, 0, 0.28) 10px,
     rgba(0, 0, 0, 0.4) 10px,
-    rgba(0, 0, 0, 0.55) 10px,
-    rgba(0, 0, 0, 0.55) 20px
+    rgba(0, 0, 0, 0.4) 20px
   ) !important;
   opacity: 1 !important;
   border: none !important;
   pointer-events: none;
+  z-index: 0 !important;
 }
 
 /* Current time — more visible on dark grid */
@@ -282,15 +290,15 @@ All colors MUST be HSL.
   filter: drop-shadow(0 0 4px rgba(94, 234, 212, 0.8));
 }
 
-/* Busy — solid member color; custom React content must fill harness height or bars look “short” */
+/* Busy — member color only; avoid heavy opacity stacking so the same person reads consistent */
 .availability-fc .fc-timegrid-event.fc-slot-busy {
-  opacity: 0.6 !important;
+  opacity: 0.82 !important;
   pointer-events: none !important;
   border-radius: 6px !important;
   border-width: 1px !important;
   border-style: solid !important;
   overflow: hidden;
-  z-index: 1 !important;
+  z-index: 2 !important;
   position: relative;
 }
 
@@ -309,29 +317,25 @@ All colors MUST be HSL.
   width: 100%;
 }
 
-/* Available slots — dashed outline only (no solid fill); sits above busy */
+/* Free slots — neutral dashed affordance only (no blue fill); light layer above busy */
 .availability-fc .fc-timegrid-event.fc-slot-available-event {
   cursor: pointer;
   border: none !important;
-  border-radius: 8px !important;
+  border-radius: 6px !important;
   overflow: visible;
   opacity: 1 !important;
-  z-index: 10 !important;
+  z-index: 5 !important;
   position: relative;
   box-shadow: none !important;
-  transition:
-    filter 0.15s ease,
-    transform 0.12s ease,
-    box-shadow 0.15s ease;
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-available-event .fc-event-main {
   background: transparent !important;
-  color: rgba(255, 255, 255, 0.8) !important;
-  font-weight: 500;
-  padding: 2px;
-  border-radius: 6px;
-  border: 1px dashed rgba(94, 234, 212, 0.5);
+  color: transparent !important;
+  font-weight: 400;
+  padding: 1px;
+  border-radius: 5px;
+  border: 1px dashed rgba(255, 255, 255, 0.38);
   box-sizing: border-box;
   height: 100% !important;
   min-height: 100% !important;
@@ -339,34 +343,31 @@ All colors MUST be HSL.
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-available-event .fc-event-title,
 .availability-fc .fc-timegrid-event.fc-slot-available-event .fc-event-time {
-  color: inherit !important;
+  color: transparent !important;
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-available-event:hover .fc-event-main {
-  border: 1px dashed rgba(94, 234, 212, 1);
-  background: rgba(94, 234, 212, 0.1) !important;
-  color: #fff !important;
+  border-color: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.06) !important;
 }
 
-.availability-fc .fc-timegrid-event.fc-slot-available-event:hover {
-  filter: brightness(1.05);
-}
-
-/* Selected slot */
+/* Selected slot — still minimal */
 .availability-fc .fc-timegrid-event.fc-slot-selected-event .fc-event-main {
-  background: rgba(94, 234, 212, 0.12) !important;
-  border: 2px dashed rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px dashed rgba(255, 255, 255, 0.85);
   box-shadow: none;
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-selected-event {
   box-shadow: none !important;
-  z-index: 12 !important;
+  z-index: 8 !important;
 }
 
 /* Embed: white panel — grid + text + slots tuned for light bg */
@@ -396,12 +397,23 @@ All colors MUST be HSL.
   color: #334155;
 }
 
+.availability-fc--embed .fc .fc-timegrid-slot-major {
+  border-bottom-color: rgba(15, 23, 42, 0.22) !important;
+}
+
 .availability-fc--embed .fc .fc-timegrid-slot-minor {
-  border-color: rgba(15, 23, 42, 0.06);
+  border-bottom-color: rgba(15, 23, 42, 0.06) !important;
 }
 
 .availability-fc--embed .fc-event.fc-non-business-bg.fc-bg-event {
-  background: rgba(15, 23, 42, 0.07) !important;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(15, 23, 42, 0.05),
+    rgba(15, 23, 42, 0.05) 10px,
+    rgba(15, 23, 42, 0.09) 10px,
+    rgba(15, 23, 42, 0.09) 20px
+  ) !important;
+  z-index: 0 !important;
 }
 
 .availability-fc--embed .fc {
@@ -417,21 +429,21 @@ All colors MUST be HSL.
 }
 
 .availability-fc--embed .fc-timegrid-event.fc-slot-busy {
-  opacity: 0.6 !important;
+  opacity: 0.82 !important;
   pointer-events: none !important;
 }
 
 .availability-fc--embed .fc-timegrid-event.fc-slot-available-event .fc-event-main {
-  border-color: rgba(13, 148, 136, 0.75);
-  color: #0f172a !important;
+  border-color: rgba(15, 23, 42, 0.28);
+  color: transparent !important;
 }
 
 .availability-fc--embed .fc-timegrid-event.fc-slot-available-event:hover .fc-event-main {
-  background: rgba(13, 148, 136, 0.1) !important;
-  border-color: rgba(13, 148, 136, 1);
+  background: rgba(15, 23, 42, 0.06) !important;
+  border-color: rgba(15, 23, 42, 0.45);
 }
 
 .availability-fc--embed .fc-timegrid-event.fc-slot-selected-event .fc-event-main {
-  border-color: #0f172a;
-  background: rgba(13, 148, 136, 0.15) !important;
+  border-color: rgba(15, 23, 42, 0.55);
+  background: rgba(15, 23, 42, 0.08) !important;
 }

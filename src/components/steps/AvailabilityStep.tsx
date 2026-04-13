@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Calendar, Clock, ChevronLeft, ChevronRight, X, Trash2, GripHorizontal, Loader, List, LayoutGrid } from 'lucide-react';
-import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
+import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, isSameDay } from 'date-fns';
 import {
   enumerateZonedDaysInView,
   splitBusySlotsForCalendar,
@@ -70,6 +70,8 @@ const monthCalendarSpan = (month: Date) => {
   const end = endOfWeek(endOfMonth(month), { weekStartsOn: 1 });
   return { start, end };
 };
+
+const WEEK_VIEW_SLOT_LIMIT = 5;
 
 /** Darker edge for busy blocks (Google-style border). */
 const darkenBorderHex = (hex: string, factor = 0.62): string => {
@@ -684,21 +686,60 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
   ]);
 
   const fcTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const calendarRef = useRef<InstanceType<typeof FullCalendar>>(null);
+  const busyDebugLoggedRef = useRef<Set<string>>(new Set());
+  const [fcToolbarTitle, setFcToolbarTitle] = useState('');
+  const [fcActiveView, setFcActiveView] = useState<'timeGridDay' | 'timeGridWeek'>('timeGridWeek');
 
-  const fullCalendarEvents: EventInput[] = useMemo(() => {
+  const maybeDebugBusyEvent = useCallback((rawBusy: BusySlot, transformed: { start: string; end: string }) => {
+    if (typeof window === 'undefined' || !(window as any).__DEBUG_AVAILABILITY_CALENDAR__) return;
+    const key = `${rawBusy.start}|${rawBusy.end}|${transformed.start}|${transformed.end}|${fcActiveView}|${fcTimezone}`;
+    if (busyDebugLoggedRef.current.has(key)) return;
+    busyDebugLoggedRef.current.add(key);
+
+    const start = DateTime.fromISO(transformed.start);
+    const end = DateTime.fromISO(transformed.end);
+    console.info('[availability-calendar debug]', {
+      rawBusySlot: rawBusy,
+      transformedEvent: transformed,
+      activeView: fcActiveView,
+      fullCalendarTimeZone: fcTimezone,
+      startType: typeof transformed.start,
+      endType: typeof transformed.end,
+      durationMinutes: end.diff(start, 'minutes').minutes,
+    });
+  }, [fcActiveView, fcTimezone]);
+
+  const visibleZonedDays = useMemo(
+    () => enumerateZonedDaysInView(busyFetchRange.start, busyFetchRange.end, fcTimezone),
+    [busyFetchRange.start, busyFetchRange.end, fcTimezone]
+  );
+
+  const visibleSlotsByDay = useMemo(() => {
+    const map = new Map<string, TimeSlot[]>();
+    if (!schedulingSettings || loading) return map;
+
+    const nowZ = DateTime.now().setZone(fcTimezone).startOf('day');
+    visibleZonedDays.forEach(dayStart => {
+      if (dayStart < nowZ && !dayStart.hasSame(nowZ, 'day')) return;
+      const isoDate = dayStart.toISODate();
+      if (!isoDate) return;
+      map.set(isoDate, generateSlotsForDate(isoDate));
+    });
+
+    return map;
+  }, [fcTimezone, generateSlotsForDate, loading, schedulingSettings, visibleZonedDays]);
+
+  const computedFullCalendarEvents: EventInput[] = useMemo(() => {
     if (!schedulingSettings) return [];
-
     if (busyFetchRange.end.getTime() <= busyFetchRange.start.getTime()) return [];
 
     /** Matches `<FullCalendar slotMinTime` / `slotMaxTime` (09:00–18:00). */
     const FC_SLOT_MIN_H = 9;
     const FC_SLOT_MAX_H = 18;
 
-    const zonedDays = enumerateZonedDaysInView(busyFetchRange.start, busyFetchRange.end, fcTimezone);
-    const nowZ = DateTime.now().setZone(fcTimezone);
-
     const nonBizEvents = buildNonBusinessBackgroundEvents(
-      zonedDays,
+      visibleZonedDays,
       fcTimezone,
       FC_SLOT_MIN_H,
       FC_SLOT_MAX_H,
@@ -707,86 +748,104 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     );
 
     const busyEvents: EventInput[] = [];
-    if (!loading) {
-      Object.entries(monthlyBusySchedule).forEach(([email, slots]) => {
-        const key = email.toLowerCase().trim();
-        const display = memberDisplayByEmail.get(key);
-        const hex = display?.color.hex ?? '#64748b';
-        const memberName = display?.name ?? email.split('@')[0] ?? email;
-        slots.forEach((busy, i) => {
-          const segments = splitBusySlotsForCalendar(
-            busy.start,
-            busy.end,
-            fcTimezone,
-            FC_SLOT_MIN_H,
-            FC_SLOT_MAX_H
-          );
-          segments.forEach((seg, segIdx) => {
-            busyEvents.push({
-              id: `busy-${email}-${i}-${segIdx}-${seg.start}`,
-              title: memberName,
-              start: seg.start,
-              end: seg.end,
-              backgroundColor: hex,
-              borderColor: darkenBorderHex(hex),
-              textColor: '#ffffff',
-              extendedProps: { kind: 'busy' as const },
-              classNames: ['fc-slot-busy'],
-            });
+    Object.entries(monthlyBusySchedule).forEach(([email, slots]) => {
+      const key = email.toLowerCase().trim();
+      const display = memberDisplayByEmail.get(key);
+      const hex = display?.color.hex ?? '#64748b';
+      const memberName = display?.name ?? email.split('@')[0] ?? email;
+      slots.forEach((busy, i) => {
+        const segments = splitBusySlotsForCalendar(
+          busy.start,
+          busy.end,
+          fcTimezone,
+          FC_SLOT_MIN_H,
+          FC_SLOT_MAX_H
+        );
+        segments.forEach((seg, segIdx) => {
+          maybeDebugBusyEvent(busy, seg);
+          busyEvents.push({
+            id: `busy-${email}-${i}-${segIdx}-${seg.start}`,
+            title: memberName,
+            start: seg.start,
+            end: seg.end,
+            backgroundColor: hex,
+            borderColor: darkenBorderHex(hex),
+            textColor: '#ffffff',
+            extendedProps: { kind: 'busy' as const },
+            classNames: ['fc-slot-busy'],
           });
         });
       });
-    }
+    });
 
     const slotEvents: EventInput[] = [];
-    if (!loading) {
-      zonedDays.forEach(dayStart => {
-        if (dayStart < nowZ.startOf('day') && !dayStart.hasSame(nowZ, 'day')) return;
-        const isoDate = dayStart.toISODate();
-        if (!isoDate) return;
-        const slots = generateSlotsForDate(isoDate);
-        slots.forEach((slot, idx) => {
-          const isSelected = appState.selectedTime === slot.start;
-          slotEvents.push({
-            id: `avail-${slot.start}-${idx}`,
-            title: '',
-            start: slot.start,
-            end: slot.end,
-            backgroundColor: 'transparent',
-            borderColor: 'transparent',
-            extendedProps: { slot, kind: 'available' as const },
-            classNames: isSelected ? ['fc-slot-selected-event'] : ['fc-slot-available-event'],
-          });
+    visibleZonedDays.forEach(dayStart => {
+      const isoDate = dayStart.toISODate();
+      if (!isoDate) return;
+
+      const allSlots = visibleSlotsByDay.get(isoDate) ?? [];
+      const selectedSlot = appState.selectedTime
+        ? allSlots.find(slot => slot.start === appState.selectedTime)
+        : undefined;
+      const visibleSlots =
+        fcActiveView === 'timeGridWeek'
+          ? (() => {
+              const limited = allSlots.slice(0, WEEK_VIEW_SLOT_LIMIT);
+              if (selectedSlot && !limited.some(slot => slot.start === selectedSlot.start)) {
+                return [...limited, selectedSlot];
+              }
+              return limited;
+            })()
+          : allSlots;
+
+      visibleSlots.forEach((slot, idx) => {
+        const isSelected = appState.selectedTime === slot.start;
+        slotEvents.push({
+          id: `avail-${slot.start}-${idx}`,
+          title: '',
+          start: slot.start,
+          end: slot.end,
+          backgroundColor: 'transparent',
+          borderColor: 'transparent',
+          extendedProps: { slot, kind: 'available' as const },
+          classNames: isSelected ? ['fc-slot-selected-event'] : ['fc-slot-available-event'],
         });
       });
-    }
+    });
 
     return [...nonBizEvents, ...busyEvents, ...slotEvents];
   }, [
     schedulingSettings,
-    loading,
     busyFetchRange.start,
     busyFetchRange.end,
     monthlyBusySchedule,
-    generateSlotsForDate,
     getWorkingHoursForDate,
     businessHours,
     appState.selectedTime,
-    appState.requiredMembers,
-    appState.optionalMembers,
     memberDisplayByEmail,
     fcTimezone,
+    visibleSlotsByDay,
+    visibleZonedDays,
+    fcActiveView,
+    maybeDebugBusyEvent,
   ]);
+
+  const [fullCalendarEvents, setFullCalendarEvents] = useState<EventInput[]>([]);
+
+  useEffect(() => {
+    if (!schedulingSettings) {
+      setFullCalendarEvents([]);
+      return;
+    }
+    if (loading) return;
+    setFullCalendarEvents(computedFullCalendarEvents);
+  }, [computedFullCalendarEvents, loading, schedulingSettings]);
 
   const fcTeamCompositionKey = useMemo(() => {
     const req = [...appState.requiredMembers].sort().join('|');
     const opt = [...appState.optionalMembers].sort().join('|');
     return `${req}__${opt}`;
   }, [appState.requiredMembers, appState.optionalMembers]);
-
-  const calendarRef = useRef<InstanceType<typeof FullCalendar>>(null);
-  const [fcToolbarTitle, setFcToolbarTitle] = useState('');
-  const [fcActiveView, setFcActiveView] = useState<'timeGridDay' | 'timeGridWeek'>('timeGridWeek');
 
   const handleFcDatesSet = useCallback(
     (info: DatesSetArg) => {
@@ -860,11 +919,30 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
         );
       }
 
-      if (kind !== 'available') {
+      const slot = arg.event.extendedProps?.slot as TimeSlot | undefined;
+      if (kind !== 'available' || !slot) {
         return null;
       }
-      /* Minimal affordance only — slot times live on the axis / list view; keeps dense days readable. */
-      return <div className="fc-free-slot-marker h-full min-h-[6px] w-full shrink-0" aria-hidden />;
+
+      return (
+        <div className="fc-free-slot-marker flex h-full min-h-0 w-full min-w-0 flex-col justify-center gap-0.5 px-1 py-0.5">
+          <div className="fc-free-slot-time truncate text-center text-[9px] font-medium leading-none">
+            {formatTimeSlot(new Date(slot.start))}
+          </div>
+          <div className="flex justify-center gap-0.5 overflow-hidden">
+            {slot.attendees
+              ?.filter((a): a is SlotAttendee => a.available)
+              .slice(0, 4)
+              .map(attendee => (
+                <span
+                  key={attendee.email}
+                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: attendee.color?.hex }}
+                />
+              ))}
+          </div>
+        </div>
+      );
     },
     [formatTimeSlot, isEmbed]
   );

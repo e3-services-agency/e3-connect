@@ -1489,20 +1489,26 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                           onClick={() => handleTimeSelect(slot)}
                         >
                           <div
-                            className={`flex h-full w-full items-center justify-center overflow-hidden rounded-[5px] border-[1.5px] border-dashed px-1 transition-colors duration-150 ${
+                            className={`flex h-full w-full items-center justify-center overflow-hidden rounded-[5px] border-[2px] border-dashed px-1 transition-colors duration-150 ${
                               isSelected
                                 ? isEmbed
-                                  ? 'border-emerald-500 bg-emerald-50/70'
-                                  : 'border-white/80 bg-white/10'
+                                  ? 'border-emerald-600 bg-emerald-50/80'
+                                  : 'border-white bg-white/15'
                                 : isEmbed
-                                  ? 'border-slate-400/70 bg-transparent hover:border-slate-500 hover:bg-slate-50/60'
-                                  : 'border-white/40 bg-transparent hover:border-white/65 hover:bg-white/[0.07]'
+                                  ? 'border-slate-400 bg-white/40 hover:border-slate-500 hover:bg-white/60'
+                                  : 'border-white/60 bg-transparent hover:border-white/80 hover:bg-white/[0.08]'
                             }`}
                           >
                             <span
-                              className={`flex items-center gap-1 truncate text-[9px] font-medium leading-none ${
-                                isEmbed ? 'text-slate-600' : 'text-white/85'
+                              className={`flex items-center gap-1 truncate rounded-sm px-1 py-px text-[9px] font-semibold leading-none ${
+                                isEmbed
+                                  ? 'text-slate-700'
+                                  : 'text-white'
                               }`}
+                              style={isEmbed ? undefined : {
+                                backgroundColor: 'rgba(0,0,0,0.45)',
+                                textShadow: '0 1px 2px rgba(0,0,0,0.6)',
+                              }}
                             >
                               <span className="truncate">{startLabel}–{endLabel}</span>
                               {dots && dots.length > 0 && (
@@ -1510,7 +1516,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                                   {dots.map(attendee => (
                                     <span
                                       key={attendee.email}
-                                      className="inline-block h-1.5 w-1.5 rounded-full"
+                                      className="inline-block h-1.5 w-1.5 rounded-full ring-1 ring-black/30"
                                       style={{ backgroundColor: attendee.color?.hex }}
                                     />
                                   ))}

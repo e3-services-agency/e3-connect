@@ -239,25 +239,25 @@ All colors MUST be HSL.
   font-variant-numeric: tabular-nums;
 }
 
-/* Major vs Minor Grid Lines — full hours read as strong structure; half-hours stay quiet */
+/* Major vs Minor Grid Lines — full hours are the dominant structure */
 .availability-fc .fc .fc-timegrid-slot-major {
-  border-bottom: 1.5px solid rgba(255, 255, 255, 0.35) !important;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.42) !important;
 }
 
 .availability-fc .fc .fc-timegrid-slot-major .fc-timegrid-slot-label-cushion {
   font-weight: 600;
-  font-size: 0.82em;
+  font-size: 0.8em;
   opacity: 1;
 }
 
 .availability-fc .fc .fc-timegrid-slot-minor {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
 }
 
 .availability-fc .fc .fc-timegrid-slot-minor .fc-timegrid-slot-label-cushion {
-  font-size: 0.62em;
+  font-size: 0.58em;
   font-weight: 400;
-  opacity: 0.35;
+  opacity: 0.28;
 }
 
 /* Out of Business Hours — visible but below busy/availability events */
@@ -346,12 +346,12 @@ All colors MUST be HSL.
 }
 
 .availability-fc--embed .fc .fc-timegrid-slot-major {
-  border-bottom-width: 1.5px !important;
-  border-bottom-color: rgba(15, 23, 42, 0.28) !important;
+  border-bottom-width: 2px !important;
+  border-bottom-color: rgba(15, 23, 42, 0.3) !important;
 }
 
 .availability-fc--embed .fc .fc-timegrid-slot-minor {
-  border-bottom-color: rgba(15, 23, 42, 0.05) !important;
+  border-bottom-color: rgba(15, 23, 42, 0.04) !important;
 }
 
 .availability-fc--embed .fc-event.fc-non-business-bg.fc-bg-event {

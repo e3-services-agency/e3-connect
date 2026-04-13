@@ -828,6 +828,16 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
       const end = endExclusive.minus({ milliseconds: 1 });
       if (!start.isValid || !end.isValid) return;
 
+      // Sync currentMonth so list view reflects where the calendar is.
+      // For week view, use the Thursday (midpoint) of the visible week as the
+      // representative day; for day view, use the visible day directly.
+      const refDate = new Date(info.view.currentStart);
+      if (info.view.type !== 'timeGridDay') refDate.setDate(refDate.getDate() + 3);
+      setCurrentMonth(prev => {
+        if (prev.getFullYear() === refDate.getFullYear() && prev.getMonth() === refDate.getMonth()) return prev;
+        return new Date(refDate.getFullYear(), refDate.getMonth(), 1);
+      });
+
       if (info.view.type === 'timeGridDay') {
         setFcToolbarTitle(start.setLocale('en-GB').toFormat('EEEE d MMMM yyyy'));
         return;
@@ -1482,6 +1492,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                   key={`fc-${fcTimezone}-${appState.timeFormat}-${fcTeamCompositionKey}`}
                   plugins={FC_PLUGINS}
                   initialView="timeGridWeek"
+                  initialDate={currentMonth}
                   headerToolbar={false}
                   locale={enGbLocale}
                   events={computedFullCalendarEvents}

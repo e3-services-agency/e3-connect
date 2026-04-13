@@ -707,10 +707,31 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     return null;
   }, [calendarDays, dailyAvailabilityMap, schedulingSettings, selectedMemberEmails.required]);
 
+  // Invariant: selectedDate must be in the visible month (list view).
+  // When the user navigates months, clear any out-of-range selection so
+  // the preselection effect can pick a valid pair for the new month.
+  useEffect(() => {
+    if (!selectedDate) return;
+    if (availabilityView !== 'list') return;
+    const inCurrentMonth =
+      selectedDate.getMonth() === currentMonth.getMonth() &&
+      selectedDate.getFullYear() === currentMonth.getFullYear();
+    if (!inCurrentMonth) {
+      setSelectedDate(null);
+      onStateChange({ selectedDate: null, selectedTime: null });
+    }
+  }, [currentMonth, selectedDate, availabilityView, onStateChange]);
+
   useEffect(() => {
     if (loading || membersLoading || !schedulingSettings) return;
 
+    // Invariant: if selectedTime exists, selectedDate must match the time's date.
     if (appState.selectedTime && availableSlots.some(s => s.start === appState.selectedTime)) {
+      const timeDate = new Date(appState.selectedTime);
+      if (!selectedDate || !isSameDay(selectedDate, timeDate)) {
+        setSelectedDate(timeDate);
+        onStateChange({ selectedDate: format(timeDate, 'yyyy-MM-dd') });
+      }
       return;
     }
 
@@ -734,6 +755,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     firstAvailableCalendarDate,
     handleDateSelect,
     handleTimeSelect,
+    onStateChange,
   ]);
 
   const calendarRef = useRef<InstanceType<typeof FullCalendar>>(null);

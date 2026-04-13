@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Calendar, Clock, ChevronLeft, ChevronRight, X, Trash2, GripHorizontal, Loader, List, LayoutGrid } from 'lucide-react';
-import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, isSameDay } from 'date-fns';
+import { format, startOfWeek, startOfMonth, endOfMonth, endOfWeek, eachDayOfInterval, isSameDay } from 'date-fns';
 import {
   enumerateZonedDaysInView,
   splitBusySlotsForCalendar,

@@ -1493,22 +1493,27 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                               isSelected
                                 ? isEmbed
                                   ? 'border-emerald-600 bg-emerald-50/80'
-                                  : 'border-white bg-white/15'
+                                  : 'bg-e3-emerald/15'
                                 : isEmbed
                                   ? 'border-slate-400 bg-white/40 hover:border-slate-500 hover:bg-white/60'
                                   : 'border-white/60 bg-transparent hover:border-white/80 hover:bg-white/[0.08]'
                             }`}
+                            style={isSelected && !isEmbed ? { borderColor: '#0DCC96' } : undefined}
                           >
                             <span
                               className={`flex items-center gap-1 truncate rounded-sm px-1 py-px text-[9px] font-semibold leading-none ${
-                                isEmbed
-                                  ? 'text-slate-700'
-                                  : 'text-white'
+                                isSelected
+                                  ? isEmbed
+                                    ? 'text-emerald-800'
+                                    : 'text-white'
+                                  : isEmbed
+                                    ? 'text-slate-700'
+                                    : 'text-white'
                               }`}
-                              style={isEmbed ? undefined : {
-                                backgroundColor: 'rgba(0,0,0,0.45)',
-                                textShadow: '0 1px 2px rgba(0,0,0,0.6)',
-                              }}
+                              style={isEmbed ? undefined : isSelected
+                                ? { backgroundColor: 'rgba(13,204,150,0.35)', textShadow: '0 1px 2px rgba(0,0,0,0.5)' }
+                                : { backgroundColor: 'rgba(0,0,0,0.45)', textShadow: '0 1px 2px rgba(0,0,0,0.6)' }
+                              }
                             >
                               <span className="truncate">{startLabel}–{endLabel}</span>
                               {dots && dots.length > 0 && (

@@ -652,36 +652,32 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     return null;
   }, [calendarDays, dailyAvailabilityMap, schedulingSettings, selectedMemberEmails.required]);
 
-  const embedAutoDatePicked = useRef(false);
-  const embedAutoTimePicked = useRef(false);
-
   useEffect(() => {
-    if (!isEmbed || embedAutoDatePicked.current || selectedDate || !firstAvailableCalendarDate) return;
-    if (loading || membersLoading) return;
-    handleDateSelect(firstAvailableCalendarDate);
-    embedAutoDatePicked.current = true;
+    if (loading || membersLoading || !schedulingSettings) return;
+
+    if (appState.selectedTime && availableSlots.some(s => s.start === appState.selectedTime)) {
+      return;
+    }
+
+    if (selectedDate && availableSlots.length > 0) {
+      handleTimeSelect(availableSlots[0]);
+      return;
+    }
+
+    if (firstAvailableCalendarDate) {
+      if (!selectedDate || !isSameDay(selectedDate, firstAvailableCalendarDate)) {
+        handleDateSelect(firstAvailableCalendarDate);
+      }
+    }
   }, [
-    isEmbed,
-    firstAvailableCalendarDate,
-    selectedDate,
     loading,
     membersLoading,
-    handleDateSelect,
-  ]);
-
-  useEffect(() => {
-    if (!isEmbed || embedAutoTimePicked.current || appState.selectedTime) return;
-    if (loading || !schedulingSettings) return;
-    if (!selectedDate || availableSlots.length === 0) return;
-    handleTimeSelect(availableSlots[0]);
-    embedAutoTimePicked.current = true;
-  }, [
-    isEmbed,
-    loading,
     schedulingSettings,
-    selectedDate,
-    availableSlots,
     appState.selectedTime,
+    availableSlots,
+    selectedDate,
+    firstAvailableCalendarDate,
+    handleDateSelect,
     handleTimeSelect,
   ]);
 

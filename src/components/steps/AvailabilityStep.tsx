@@ -687,28 +687,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
 
   const fcTimezone = appState.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const calendarRef = useRef<InstanceType<typeof FullCalendar>>(null);
-  const busyDebugLoggedRef = useRef<Set<string>>(new Set());
   const [fcToolbarTitle, setFcToolbarTitle] = useState('');
   const [fcActiveView, setFcActiveView] = useState<'timeGridDay' | 'timeGridWeek'>('timeGridWeek');
-
-  const maybeDebugBusyEvent = useCallback((rawBusy: BusySlot, transformed: { start: string; end: string }) => {
-    if (typeof window === 'undefined' || !(window as any).__DEBUG_AVAILABILITY_CALENDAR__) return;
-    const key = `${rawBusy.start}|${rawBusy.end}|${transformed.start}|${transformed.end}|${fcActiveView}|${fcTimezone}`;
-    if (busyDebugLoggedRef.current.has(key)) return;
-    busyDebugLoggedRef.current.add(key);
-
-    const start = DateTime.fromISO(transformed.start);
-    const end = DateTime.fromISO(transformed.end);
-    console.info('[availability-calendar debug]', {
-      rawBusySlot: rawBusy,
-      transformedEvent: transformed,
-      activeView: fcActiveView,
-      fullCalendarTimeZone: fcTimezone,
-      startType: typeof transformed.start,
-      endType: typeof transformed.end,
-      durationMinutes: end.diff(start, 'minutes').minutes,
-    });
-  }, [fcActiveView, fcTimezone]);
 
   const visibleZonedDays = useMemo(
     () => enumerateZonedDaysInView(busyFetchRange.start, busyFetchRange.end, fcTimezone),
@@ -762,7 +742,6 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
           FC_SLOT_MAX_H
         );
         segments.forEach((seg, segIdx) => {
-          maybeDebugBusyEvent(busy, seg);
           busyEvents.push({
             id: `busy-${email}-${i}-${segIdx}-${seg.start}`,
             title: memberName,
@@ -827,19 +806,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     visibleSlotsByDay,
     visibleZonedDays,
     fcActiveView,
-    maybeDebugBusyEvent,
   ]);
-
-  const [fullCalendarEvents, setFullCalendarEvents] = useState<EventInput[]>([]);
-
-  useEffect(() => {
-    if (!schedulingSettings) {
-      setFullCalendarEvents([]);
-      return;
-    }
-    if (loading) return;
-    setFullCalendarEvents(computedFullCalendarEvents);
-  }, [computedFullCalendarEvents, loading, schedulingSettings]);
 
   const fcTeamCompositionKey = useMemo(() => {
     const req = [...appState.requiredMembers].sort().join('|');
@@ -1433,7 +1400,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                 initialView="timeGridWeek"
                 headerToolbar={false}
                 locale={enGbLocale}
-                events={fullCalendarEvents}
+                events={computedFullCalendarEvents}
                 datesSet={handleFcDatesSet}
                 eventClick={handleFcEventClick}
                 eventContent={renderFcEventContent}
@@ -1452,7 +1419,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                 allDaySlot={false}
                 contentHeight="auto"
                 scrollTime="09:00:00"
-                eventOrder="start"
+                eventOrder="start,-duration,allDay,title"
                 displayEventTime={false}
               />
             </div>

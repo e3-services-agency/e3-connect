@@ -710,13 +710,13 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     return map;
   }, [fcTimezone, generateSlotsForDate, loading, schedulingSettings, visibleZonedDays]);
 
+  const FC_SLOT_MIN_H = 9;
+  const FC_SLOT_MAX_H = 18;
+  const FC_GRID_TOTAL_MIN = (FC_SLOT_MAX_H - FC_SLOT_MIN_H) * 60;
+
   const computedFullCalendarEvents: EventInput[] = useMemo(() => {
     if (!schedulingSettings) return [];
     if (busyFetchRange.end.getTime() <= busyFetchRange.start.getTime()) return [];
-
-    /** Matches `<FullCalendar slotMinTime` / `slotMaxTime` (09:00–18:00). */
-    const FC_SLOT_MIN_H = 9;
-    const FC_SLOT_MAX_H = 18;
 
     const nonBizEvents = buildNonBusinessBackgroundEvents(
       visibleZonedDays,
@@ -753,50 +753,11 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
             extendedProps: { kind: 'busy' as const },
             classNames: ['fc-slot-busy'],
           });
-          if ((window as any).__AUDIT_BUSY__) {
-            console.table({ rawStart: busy.start, rawEnd: busy.end, segStart: seg.start, segEnd: seg.end, email, fcTimezone });
-            console.log('EventInput:', JSON.stringify(busyEvents[busyEvents.length - 1]));
-          }
         });
       });
     });
 
-    const slotEvents: EventInput[] = [];
-    visibleZonedDays.forEach(dayStart => {
-      const isoDate = dayStart.toISODate();
-      if (!isoDate) return;
-
-      const allSlots = visibleSlotsByDay.get(isoDate) ?? [];
-      const selectedSlot = appState.selectedTime
-        ? allSlots.find(slot => slot.start === appState.selectedTime)
-        : undefined;
-      const visibleSlots =
-        fcActiveView === 'timeGridWeek'
-          ? (() => {
-              const limited = allSlots.slice(0, WEEK_VIEW_SLOT_LIMIT);
-              if (selectedSlot && !limited.some(slot => slot.start === selectedSlot.start)) {
-                return [...limited, selectedSlot];
-              }
-              return limited;
-            })()
-          : allSlots;
-
-      visibleSlots.forEach((slot, idx) => {
-        const isSelected = appState.selectedTime === slot.start;
-        slotEvents.push({
-          id: `avail-${slot.start}-${idx}`,
-          title: '',
-          start: slot.start,
-          end: slot.end,
-          backgroundColor: 'transparent',
-          borderColor: 'transparent',
-          extendedProps: { slot, kind: 'available' as const },
-          classNames: isSelected ? ['fc-slot-selected-event'] : ['fc-slot-available-event'],
-        });
-      });
-    });
-
-    return [...nonBizEvents, ...busyEvents, ...slotEvents];
+    return [...nonBizEvents, ...busyEvents];
   }, [
     schedulingSettings,
     busyFetchRange.start,
@@ -804,12 +765,9 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     monthlyBusySchedule,
     getWorkingHoursForDate,
     businessHours,
-    appState.selectedTime,
     memberDisplayByEmail,
     fcTimezone,
-    visibleSlotsByDay,
     visibleZonedDays,
-    fcActiveView,
   ]);
 
   const fcTeamCompositionKey = useMemo(() => {
@@ -842,16 +800,8 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
   );
 
   const handleFcEventClick = useCallback((info: EventClickArg) => {
-    const kind = info.event.extendedProps?.kind;
-    if (kind === 'busy') {
-      info.jsEvent.preventDefault();
-      return;
-    }
-    const slot = info.event.extendedProps?.slot as TimeSlot | undefined;
-    if (kind !== 'available' || !slot) return;
     info.jsEvent.preventDefault();
-    handleTimeSelect(slot);
-  }, [handleTimeSelect]);
+  }, []);
 
   const fcFormats = useMemo(() => {
     const is24 = appState.timeFormat === '24h';
@@ -867,58 +817,142 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
 
   const renderFcEventContent = useCallback(
     (arg: EventContentArg) => {
-      const kind = arg.event.extendedProps?.kind;
+      if (arg.event.extendedProps?.kind !== 'busy') return null;
+      const title = arg.event.title || '';
+      const start = arg.event.start;
+      const end = arg.event.end;
+      if (!start || !end) return null;
 
-      if (kind === 'busy') {
-        const title = arg.event.title || '';
-        const start = arg.event.start;
-        const end = arg.event.end;
-        if (!start || !end) return null;
-
-        const startDt = start instanceof Date ? start : new Date(start);
-        const endDt = end instanceof Date ? end : new Date(end);
-        const timeLabel = `${formatTimeSlot(startDt)} – ${formatTimeSlot(endDt)}`;
-
-        return (
-          <div
-            className={`fc-busy-inner flex h-full min-h-full flex-col gap-0.5 overflow-hidden px-0.5 py-0.5 text-[10px] leading-tight ${
-              isEmbed ? 'text-slate-900' : 'text-white'
-            }`}
-            style={isEmbed ? undefined : { textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}
-          >
-            <div className="truncate font-semibold">{title}</div>
-            <div className={`truncate ${isEmbed ? 'text-slate-700' : 'text-white/90'}`}>{timeLabel}</div>
-          </div>
-        );
-      }
-
-      const slot = arg.event.extendedProps?.slot as TimeSlot | undefined;
-      if (kind !== 'available' || !slot) {
-        return null;
-      }
+      const startDt = start instanceof Date ? start : new Date(start);
+      const endDt = end instanceof Date ? end : new Date(end);
+      const timeLabel = `${formatTimeSlot(startDt)} – ${formatTimeSlot(endDt)}`;
 
       return (
-        <div className="fc-free-slot-marker flex h-full min-h-0 w-full min-w-0 flex-col justify-center gap-0.5 px-1 py-0.5">
-          <div className="fc-free-slot-time truncate text-center text-[9px] font-medium leading-none">
-            {formatTimeSlot(new Date(slot.start))}
-          </div>
-          <div className="flex justify-center gap-0.5 overflow-hidden">
-            {slot.attendees
-              ?.filter((a): a is SlotAttendee => a.available)
-              .slice(0, 4)
-              .map(attendee => (
-                <span
-                  key={attendee.email}
-                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
-                  style={{ backgroundColor: attendee.color?.hex }}
-                />
-              ))}
-          </div>
+        <div
+          className={`fc-busy-inner flex h-full min-h-full flex-col gap-0.5 overflow-hidden px-0.5 py-0.5 text-[10px] leading-tight ${
+            isEmbed ? 'text-slate-900' : 'text-white'
+          }`}
+          style={isEmbed ? undefined : { textShadow: '0 1px 2px rgba(0,0,0,0.4)' }}
+        >
+          <div className="truncate font-semibold">{title}</div>
+          <div className={`truncate ${isEmbed ? 'text-slate-700' : 'text-white/90'}`}>{timeLabel}</div>
         </div>
       );
     },
     [formatTimeSlot, isEmbed]
   );
+
+  // ── Slot overlay: measure FullCalendar grid and position slots outside FC ──
+
+  const fcWrapperRef = useRef<HTMLDivElement>(null);
+
+  interface GridLayout {
+    top: number;
+    height: number;
+    dayColumns: Map<string, { left: number; width: number }>;
+  }
+
+  const measureGrid = useCallback((): GridLayout | null => {
+    const wrapper = fcWrapperRef.current;
+    if (!wrapper) return null;
+
+    const slotsEl = wrapper.querySelector<HTMLElement>('.fc-timegrid-slots');
+    if (!slotsEl) return null;
+
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const slotsRect = slotsEl.getBoundingClientRect();
+
+    const dayColumns = new Map<string, { left: number; width: number }>();
+    wrapper.querySelectorAll<HTMLElement>('.fc-timegrid-col[data-date]').forEach(col => {
+      const date = col.getAttribute('data-date');
+      if (!date) return;
+      const r = col.getBoundingClientRect();
+      dayColumns.set(date, { left: r.left - wrapperRect.left, width: r.width });
+    });
+
+    if (dayColumns.size === 0) return null;
+
+    return {
+      top: slotsRect.top - wrapperRect.top,
+      height: slotsRect.height,
+      dayColumns,
+    };
+  }, []);
+
+  const [gridLayout, setGridLayout] = useState<GridLayout | null>(null);
+
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setGridLayout(measureGrid()));
+
+    const wrapper = fcWrapperRef.current;
+    if (!wrapper) return () => cancelAnimationFrame(raf);
+
+    const ro = new ResizeObserver(() => setGridLayout(measureGrid()));
+    ro.observe(wrapper);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [measureGrid, computedFullCalendarEvents, fcActiveView]);
+
+  const overlaySlots = useMemo(() => {
+    if (!gridLayout || gridLayout.height <= 0) return [];
+
+    const result: Array<{
+      slot: TimeSlot;
+      top: number;
+      height: number;
+      left: number;
+      width: number;
+      isSelected: boolean;
+    }> = [];
+
+    visibleSlotsByDay.forEach((slots, dateIso) => {
+      const dayCol = gridLayout.dayColumns.get(dateIso);
+      if (!dayCol) return;
+
+      const selectedSlot = appState.selectedTime
+        ? slots.find(s => s.start === appState.selectedTime)
+        : undefined;
+
+      let visible: TimeSlot[];
+      if (fcActiveView === 'timeGridWeek') {
+        visible = slots.slice(0, WEEK_VIEW_SLOT_LIMIT);
+        if (selectedSlot && !visible.some(s => s.start === selectedSlot.start)) {
+          visible = [...visible, selectedSlot];
+        }
+      } else {
+        visible = slots;
+      }
+
+      visible.forEach(slot => {
+        const startDt = DateTime.fromISO(slot.start, { zone: fcTimezone });
+        const endDt = DateTime.fromISO(slot.end, { zone: fcTimezone });
+        if (!startDt.isValid || !endDt.isValid) return;
+
+        const startMin = startDt.hour * 60 + startDt.minute;
+        const endMin = endDt.hour * 60 + endDt.minute;
+        const gridStartMin = FC_SLOT_MIN_H * 60;
+
+        const topPx = ((startMin - gridStartMin) / FC_GRID_TOTAL_MIN) * gridLayout.height;
+        const heightPx = ((endMin - startMin) / FC_GRID_TOTAL_MIN) * gridLayout.height;
+
+        if (heightPx <= 0) return;
+
+        result.push({
+          slot,
+          top: topPx,
+          height: heightPx,
+          left: dayCol.left,
+          width: dayCol.width,
+          isSelected: appState.selectedTime === slot.start,
+        });
+      });
+    });
+
+    return result;
+  }, [gridLayout, visibleSlotsByDay, fcActiveView, appState.selectedTime, fcTimezone]);
 
   const navigateMonth = (direction: 'prev' | 'next') => {
     setCurrentMonth(direction === 'next' ? 
@@ -1399,35 +1433,94 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                   </button>
                 </div>
               </div>
-              <FullCalendar
-                ref={calendarRef}
-                key={`fc-${fcTimezone}-${appState.timeFormat}-${fcTeamCompositionKey}`}
-                plugins={[luxon3Plugin, timeGridPlugin, interactionPlugin]}
-                initialView="timeGridWeek"
-                headerToolbar={false}
-                locale={enGbLocale}
-                events={computedFullCalendarEvents}
-                datesSet={handleFcDatesSet}
-                eventClick={handleFcEventClick}
-                eventContent={renderFcEventContent}
-                selectable={false}
-                timeZone={fcTimezone}
-                firstDay={1}
-                nowIndicator
-                slotMinTime="09:00:00"
-                slotMaxTime="18:00:00"
-                slotDuration="00:30:00"
-                snapDuration="00:15:00"
-                slotLabelInterval="00:30:00"
-                slotLabelFormat={fcFormats.slotLabelFormat}
-                eventTimeFormat={fcFormats.eventTimeFormat}
-                dayHeaderFormat="EEE d/M"
-                allDaySlot={false}
-                contentHeight="auto"
-                scrollTime="09:00:00"
-                eventOrder="start,-duration,allDay,title"
-                displayEventTime={false}
-              />
+              <div ref={fcWrapperRef} className="relative">
+                <FullCalendar
+                  ref={calendarRef}
+                  key={`fc-${fcTimezone}-${appState.timeFormat}-${fcTeamCompositionKey}`}
+                  plugins={[luxon3Plugin, timeGridPlugin, interactionPlugin]}
+                  initialView="timeGridWeek"
+                  headerToolbar={false}
+                  locale={enGbLocale}
+                  events={computedFullCalendarEvents}
+                  datesSet={handleFcDatesSet}
+                  eventClick={handleFcEventClick}
+                  eventContent={renderFcEventContent}
+                  selectable={false}
+                  timeZone={fcTimezone}
+                  firstDay={1}
+                  nowIndicator
+                  slotMinTime="09:00:00"
+                  slotMaxTime="18:00:00"
+                  slotDuration="00:30:00"
+                  snapDuration="00:15:00"
+                  slotLabelInterval="00:30:00"
+                  slotLabelFormat={fcFormats.slotLabelFormat}
+                  eventTimeFormat={fcFormats.eventTimeFormat}
+                  dayHeaderFormat="EEE d/M"
+                  allDaySlot={false}
+                  contentHeight="auto"
+                  scrollTime="09:00:00"
+                  displayEventTime={false}
+                />
+                {gridLayout && (
+                  <div
+                    className="pointer-events-none absolute left-0 right-0"
+                    style={{ top: gridLayout.top, height: gridLayout.height }}
+                  >
+                    {overlaySlots.map(({ slot, top, height, left, width, isSelected }) => (
+                      <div
+                        key={slot.start}
+                        className={`pointer-events-auto absolute box-border cursor-pointer rounded-md ${
+                          isSelected
+                            ? 'slot-overlay-selected'
+                            : 'slot-overlay-available'
+                        }`}
+                        style={{
+                          top,
+                          left,
+                          width,
+                          height,
+                          zIndex: isSelected ? 5 : 3,
+                          padding: 1,
+                        }}
+                        onClick={() => handleTimeSelect(slot)}
+                      >
+                        <div
+                          className={`flex h-full w-full flex-col items-center justify-center gap-0.5 overflow-hidden rounded-[5px] border border-dashed px-1 py-0.5 transition-colors duration-150 ${
+                            isSelected
+                              ? isEmbed
+                                ? 'border-emerald-400 bg-emerald-50/60'
+                                : 'border-white/70 bg-white/10'
+                              : isEmbed
+                                ? 'border-slate-300 bg-transparent hover:border-slate-400 hover:bg-slate-50/60'
+                                : 'border-white/25 bg-transparent hover:border-white/50 hover:bg-white/[0.06]'
+                          }`}
+                        >
+                          <span
+                            className={`truncate text-center text-[9px] font-medium leading-none ${
+                              isEmbed ? 'text-slate-600' : 'text-white/80'
+                            }`}
+                          >
+                            {formatTimeSlot(new Date(slot.start))}
+                          </span>
+                          <span className="flex justify-center gap-0.5 overflow-hidden">
+                            {slot.attendees
+                              ?.filter((a): a is SlotAttendee => a.available)
+                              .slice(0, 4)
+                              .map(attendee => (
+                                <span
+                                  key={attendee.email}
+                                  className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                                  style={{ backgroundColor: attendee.color?.hex }}
+                                />
+                              ))}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             {loading && (
               <div

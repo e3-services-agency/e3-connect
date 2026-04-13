@@ -707,9 +707,29 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     return null;
   }, [calendarDays, dailyAvailabilityMap, schedulingSettings, selectedMemberEmails.required]);
 
-  // Invariant: selectedDate must be in the visible month (list view).
-  // When the user navigates months, clear any out-of-range selection so
-  // the preselection effect can pick a valid pair for the new month.
+  const hasPreselected = useRef(false);
+
+  // One-shot initial preselection: auto-pick first available date+time on first load only.
+  // Uses slotCache directly so both date and time are set in a single tick via handleTimeSelect.
+  useEffect(() => {
+    if (hasPreselected.current) return;
+    if (loading || membersLoading || !schedulingSettings) return;
+    if (appState.selectedTime) {
+      hasPreselected.current = true;
+      return;
+    }
+    if (firstAvailableCalendarDate) {
+      const ymd = format(firstAvailableCalendarDate, 'yyyy-MM-dd');
+      const slots = slotCache.get(ymd);
+      if (slots && slots.length > 0) {
+        handleTimeSelect(slots[0]);
+        hasPreselected.current = true;
+      }
+    }
+  }, [loading, membersLoading, schedulingSettings, appState.selectedTime, firstAvailableCalendarDate, slotCache, handleTimeSelect]);
+
+  // Month-visibility cleanup (list view only): if the selected date is outside
+  // the visible month after navigation, clear it. Does NOT auto-reselect.
   useEffect(() => {
     if (!selectedDate) return;
     if (availabilityView !== 'list') return;
@@ -722,41 +742,16 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     }
   }, [currentMonth, selectedDate, availabilityView, onStateChange]);
 
+  // Slot-invalidation guard: if the selected time no longer appears in
+  // available slots (e.g. after a duration or member change), clear it.
+  // Never auto-picks a replacement — the user must choose.
   useEffect(() => {
-    if (loading || membersLoading || !schedulingSettings) return;
-
-    // Invariant: if selectedTime exists, selectedDate must match the time's date.
-    if (appState.selectedTime && availableSlots.some(s => s.start === appState.selectedTime)) {
-      const timeDate = new Date(appState.selectedTime);
-      if (!selectedDate || !isSameDay(selectedDate, timeDate)) {
-        setSelectedDate(timeDate);
-        onStateChange({ selectedDate: format(timeDate, 'yyyy-MM-dd') });
-      }
-      return;
+    if (!hasPreselected.current) return;
+    if (!appState.selectedTime || !selectedDate || loading) return;
+    if (!availableSlots.some(s => s.start === appState.selectedTime)) {
+      onStateChange({ selectedTime: null });
     }
-
-    if (selectedDate && availableSlots.length > 0) {
-      handleTimeSelect(availableSlots[0]);
-      return;
-    }
-
-    if (firstAvailableCalendarDate) {
-      if (!selectedDate || !isSameDay(selectedDate, firstAvailableCalendarDate)) {
-        handleDateSelect(firstAvailableCalendarDate);
-      }
-    }
-  }, [
-    loading,
-    membersLoading,
-    schedulingSettings,
-    appState.selectedTime,
-    availableSlots,
-    selectedDate,
-    firstAvailableCalendarDate,
-    handleDateSelect,
-    handleTimeSelect,
-    onStateChange,
-  ]);
+  }, [appState.selectedTime, availableSlots, selectedDate, loading, onStateChange]);
 
   const calendarRef = useRef<InstanceType<typeof FullCalendar>>(null);
   const [fcToolbarTitle, setFcToolbarTitle] = useState('');

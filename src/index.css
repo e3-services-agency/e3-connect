@@ -239,13 +239,29 @@ All colors MUST be HSL.
   font-variant-numeric: tabular-nums;
 }
 
-.availability-fc .fc .fc-timegrid-slot-minor {
-  border-color: rgba(255, 255, 255, 0.06);
+/* Major vs Minor Grid Lines */
+.availability-fc .fc .fc-timegrid-slot-major {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2) !important;
 }
 
-/* Outside business hours (background layer) */
+.availability-fc .fc .fc-timegrid-slot-minor {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+.availability-fc .fc .fc-timegrid-slot-minor .fc-timegrid-slot-label-cushion {
+  font-size: 0.7em;
+  opacity: 0.5;
+}
+
+/* Out of Business Hours */
 .availability-fc .fc-event.fc-non-business-bg.fc-bg-event {
-  background: rgba(0, 0, 0, 0.42) !important;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.4),
+    rgba(0, 0, 0, 0.4) 10px,
+    rgba(0, 0, 0, 0.55) 10px,
+    rgba(0, 0, 0, 0.55) 20px
+  ) !important;
   opacity: 1 !important;
   border: none !important;
   pointer-events: none;
@@ -311,11 +327,11 @@ All colors MUST be HSL.
 
 .availability-fc .fc-timegrid-event.fc-slot-available-event .fc-event-main {
   background: transparent !important;
-  color: rgba(255, 255, 255, 0.95) !important;
-  font-weight: 600;
-  padding: 2px 4px;
-  border-radius: 8px;
-  border: 2px dashed rgba(94, 234, 212, 0.9);
+  color: rgba(255, 255, 255, 0.8) !important;
+  font-weight: 500;
+  padding: 2px;
+  border-radius: 6px;
+  border: 1px dashed rgba(94, 234, 212, 0.5);
   box-sizing: border-box;
   height: 100% !important;
   min-height: 100% !important;
@@ -323,6 +339,7 @@ All colors MUST be HSL.
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
+  transition: all 0.2s ease;
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-available-event .fc-event-title,
@@ -331,8 +348,9 @@ All colors MUST be HSL.
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-available-event:hover .fc-event-main {
-  border-color: rgba(167, 243, 208, 1);
-  background: rgba(94, 234, 212, 0.08) !important;
+  border: 1px dashed rgba(94, 234, 212, 1);
+  background: rgba(94, 234, 212, 0.1) !important;
+  color: #fff !important;
 }
 
 .availability-fc .fc-timegrid-event.fc-slot-available-event:hover {

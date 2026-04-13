@@ -59,10 +59,6 @@ const MEMBER_COLORS: MemberColor[] = [
   { border: 'border-fuchsia-500/40', bg: 'bg-fuchsia-500/20', text: 'text-fuchsia-400', hex: '#e879f9' },
 ];
 
-/** Calendar grid step — must stay independent of meeting `duration` or bar heights and axis get out of sync. */
-const FC_GRID_SLOT_MINUTES = 30;
-const FC_SNAP_MINUTES = 15;
-
 const monthCalendarSpan = (month: Date) => {
   const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
   const end = endOfWeek(endOfMonth(month), { weekStartsOn: 1 });
@@ -762,25 +758,30 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
     });
 
     const slotEvents: EventInput[] = [];
-    daysInRange.forEach(day => {
-      if (day < now && !isSameDay(day, now)) return;
-      const slots = generateSlotsForDate(day);
-      slots.forEach((slot, idx) => {
-        const isSelected = appState.selectedTime === slot.start;
-        slotEvents.push({
-          id: `avail-${slot.start}-${idx}`,
-          title: '',
-          start: slot.start,
-          end: slot.end,
-          extendedProps: { slot, kind: 'available' as const },
-          classNames: isSelected ? ['fc-slot-selected-event'] : ['fc-slot-available-event'],
+    if (!loading) {
+      daysInRange.forEach(day => {
+        if (day < now && !isSameDay(day, now)) return;
+        const slots = generateSlotsForDate(day);
+        slots.forEach((slot, idx) => {
+          const isSelected = appState.selectedTime === slot.start;
+          slotEvents.push({
+            id: `avail-${slot.start}-${idx}`,
+            title: '',
+            start: slot.start,
+            end: slot.end,
+            backgroundColor: 'transparent',
+            borderColor: 'transparent',
+            extendedProps: { slot, kind: 'available' as const },
+            classNames: isSelected ? ['fc-slot-selected-event'] : ['fc-slot-available-event'],
+          });
         });
       });
-    });
+    }
 
     return [...nonBizEvents, ...busyEvents, ...slotEvents];
   }, [
     schedulingSettings,
+    loading,
     busyFetchRange.start,
     busyFetchRange.end,
     monthlyBusySchedule,
@@ -1411,9 +1412,9 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
                 nowIndicator
                 slotMinTime="09:00:00"
                 slotMaxTime="18:00:00"
-                slotDuration={{ minutes: FC_GRID_SLOT_MINUTES }}
-                snapDuration={{ minutes: FC_SNAP_MINUTES }}
-                slotLabelInterval={{ minutes: 30 }}
+                slotDuration="00:30:00"
+                snapDuration="00:15:00"
+                slotLabelInterval="00:30:00"
                 slotLabelFormat={fcFormats.slotLabelFormat}
                 eventTimeFormat={fcFormats.eventTimeFormat}
                 dayHeaderFormat="EEE d/M"

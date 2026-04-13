@@ -870,9 +870,21 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
         const start = arg.event.start;
         const end = arg.event.end;
         if (!start || !end) return null;
+
         const startDt = start instanceof Date ? start : new Date(start);
         const endDt = end instanceof Date ? end : new Date(end);
-        const timeLabel = `${formatTimeSlot(startDt)} – ${formatTimeSlot(endDt)}`;
+
+        const formatFcTime = (time: Date) => {
+          return time.toLocaleTimeString('en-US', {
+            hour: appState.timeFormat === '24h' ? '2-digit' : 'numeric',
+            minute: '2-digit',
+            hour12: appState.timeFormat !== '24h',
+            timeZone: 'UTC',
+          });
+        };
+
+        const timeLabel = `${formatFcTime(startDt)} – ${formatFcTime(endDt)}`;
+
         return (
           <div
             className={`fc-busy-inner flex h-full min-h-full flex-col gap-0.5 overflow-hidden px-0.5 py-0.5 text-[10px] leading-tight ${
@@ -1395,6 +1407,7 @@ const AvailabilityStep: React.FC<AvailabilityStepProps> = ({
               </div>
               <FullCalendar
                 ref={calendarRef}
+                slotEventOverlap={false}
                 key={`fc-${fcTimezone}-${appState.timeFormat}-${fcTeamCompositionKey}`}
                 plugins={[luxon3Plugin, timeGridPlugin, interactionPlugin]}
                 initialView="timeGridWeek"

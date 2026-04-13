@@ -317,15 +317,6 @@ All colors MUST be HSL.
   width: 100%;
 }
 
-/* Harness override — prevent column-splitting from compressing busy blocks.
-   FullCalendar sets inline left/right/z-index on the harness; !important overrides them.
-   pointer-events: none on .fc-slot-busy already ensures clicks pass through to free slots. */
-.availability-fc .fc-timegrid-event-harness:has(.fc-slot-busy) {
-  left: 0 !important;
-  right: 0 !important;
-  z-index: 10 !important;
-}
-
 /* Free slots — neutral dashed affordance only (no blue fill); light layer above busy */
 .availability-fc .fc-timegrid-event.fc-slot-available-event {
   cursor: pointer;
